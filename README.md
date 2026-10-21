@@ -3,7 +3,7 @@
 
 **Abdul Hannan · Maral Mahmoudi Kamelabad · Anna Kazakova Lindegren · Robert Loredo**
 
-> Submitted to IEEE. This repository contains all experimental notebooks used to produce the results, figures, and tables in the paper.
+> Presented at IEEE Quantum Week 2026 (QCE26). This repository contains all experimental notebooks used to produce the results, figures, and tables in the paper.
 
 ---
 
