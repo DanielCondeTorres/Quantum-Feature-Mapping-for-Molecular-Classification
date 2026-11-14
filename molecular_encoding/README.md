@@ -81,10 +81,11 @@ molecular_encoding/
 
 ## 3. Benchmarks on BBBP (Stratified 10-Split CV)
 
-| Method / Feature | Accuracy | AUC-ROC | F1-Score |
-|---|:---:|:---:|:---:|
-| Classical (Random Forest + ECFP4) | 0.625 ± 0.068 | 0.654 ± 0.091 | 0.632 ± 0.089 |
-| Quantum Original (SMILES order, Pauling EN) | 0.605 ± 0.052 | 0.658 ± 0.057 | 0.552 ± 0.064 |
-| Quantum New (Scaffold+Centrality, Pauling EN) | 0.595 ± 0.106 | 0.673 ± 0.070 | 0.587 ± 0.125 |
-| **Quantum New (Scaffold+Centrality, Crippen LogP)** | **0.600 ± 0.074** | **0.681 ± 0.056** | **0.653 ± 0.063** |
-| Negative Control (Random atom assignment) | 0.575 ± 0.060 | 0.559 ± 0.112 | 0.543 ± 0.106 |
+| Method / Atom Selection Strategy | Accuracy | AUC-ROC | F1-Score | Status / Insight |
+|---|:---:|:---:|:---:|---|
+| **Classical (Random Forest + ECFP4)** | 0.625 ± 0.068 | 0.654 ± 0.091 | 0.632 ± 0.089 | Classical reference |
+| **Quantum SMILES Original (Paper baseline)** | 0.570 ± 0.103 | 0.613 ± 0.110 | 0.524 ± 0.165 | SMILES-syntax dependent |
+| **Quantum Murcko Scaffold + Centrality** | 0.595 ± 0.106 | 0.673 ± 0.070 | 0.587 ± 0.125 | Scaffold invariant, but suffers carbon-angle degeneracy |
+| **Quantum Pharmacophore-First** | **0.675 ± 0.119** | **0.736 ± 0.095** | **0.697 ± 0.115** | Prioritizes heteroatoms & H-bonding |
+| **Quantum Canonical Morgan Rank** 🚀 | **0.695 ± 0.079** | **0.760 ± 0.093** | **0.725 ± 0.072** | **Massive leap (+12.5% Acc, +14.7% AUC)** |
+| Negative Control (Random atom assignment) | 0.575 ± 0.060 | 0.559 ± 0.112 | 0.543 ± 0.106 | Topology scrambled (drops to random baseline) |

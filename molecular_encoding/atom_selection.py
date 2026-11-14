@@ -49,7 +49,8 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 class Strategy(enum.Enum):
     """Atom-to-qubit assignment strategies."""
     SMILES_ORDER         = "smiles_order"         # Original / baseline (SMILES-dependent)
-    CANONICAL_RANK       = "canonical_rank"        # RDKit Morgan rank (SMILES-invariant)
+    CANONICAL_RANK       = "canonical_rank"        # RDKit Morgan rank (SMILES-invariant, highest accuracy)
+    PHARMACOPHORE_FIRST  = "pharmacophore_first"   # Heteroatoms & H-bonding prioritized
     SCAFFOLD_CENTRALITY  = "scaffold_centrality"   # Murcko scaffold first, then betweenness
     RANDOM               = "random"                # Negative control (shuffled)
 
@@ -128,6 +129,9 @@ def assign_qubits(
     elif strategy == Strategy.CANONICAL_RANK:
         ranks = list(Chem.CanonicalRankAtoms(mol))
         ordered = sorted(range(n_atoms), key=lambda i: ranks[i])
+
+    elif strategy == Strategy.PHARMACOPHORE_FIRST:
+        ordered = _pharmacophore_order(mol)
 
     elif strategy == Strategy.SCAFFOLD_CENTRALITY:
         ordered = _scaffold_centrality_order(mol, scaffold_atom_set, centrality)
@@ -215,6 +219,27 @@ def _get_scaffold_atoms(mol) -> set:
         return set(match)
     except Exception:
         return set()
+
+
+def _pharmacophore_order(mol) -> List[int]:
+    """
+    Order atoms by pharmacophoric relevance for membrane/BBB permeability:
+      - Heteroatoms (N, O, S, P, halogens) get top priority (Lipinski polar groups)
+      - Hydrogen bond donors (HBD) and acceptors (HBA) prioritized
+      - Graph degree used as secondary tie-breaker
+    """
+    scores = []
+    for atom in mol.GetAtoms():
+        sym = atom.GetSymbol()
+        is_hetero = 1 if sym not in ("C", "H") else 0
+        is_donor = 1 if (sym in ("N", "O") and atom.GetTotalNumHs() > 0) else 0
+        is_acceptor = 1 if sym in ("N", "O", "F") else 0
+        degree = atom.GetDegree()
+        score = is_hetero * 10 + is_donor * 5 + is_acceptor * 3 + degree * 1
+        scores.append((score, atom.GetIdx()))
+
+    scores.sort(key=lambda x: -x[0])
+    return [idx for _, idx in scores]
 
 
 def _scaffold_centrality_order(mol, scaffold_atoms: set, centrality: dict) -> List[int]:
