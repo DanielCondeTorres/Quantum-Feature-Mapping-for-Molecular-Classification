@@ -90,7 +90,7 @@ class QubitAssignment:
 
 def assign_qubits(
     smiles: str,
-    strategy: Strategy = Strategy.SCAFFOLD_CENTRALITY,
+    strategy: Strategy = Strategy.CANONICAL_RANK,
     n_backbone: int = 10,
     n_tail: int = 2,
     random_seed: int = 42,

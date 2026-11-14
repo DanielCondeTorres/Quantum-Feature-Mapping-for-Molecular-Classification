@@ -28,7 +28,7 @@ def encode_molecule(smiles: str, strategy: "Strategy" = None, **kwargs):
     """
     from .atom_selection import Strategy as S
     if strategy is None:
-        strategy = S.SCAFFOLD_CENTRALITY
+        strategy = S.CANONICAL_RANK
 
     clean_smiles = preprocess_smiles(smiles)
     if clean_smiles is None:
