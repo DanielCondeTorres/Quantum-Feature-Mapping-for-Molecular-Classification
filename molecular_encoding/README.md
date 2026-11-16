@@ -68,6 +68,41 @@ all remaining heavy atoms are compressed into two scalar tail channels and
 some atom-level detail is lost. Consequently, selection quality must be
 evaluated together with classification and information-retention diagnostics.
 
+#### Visual abstract: what happens to a 20-heavy-atom molecule?
+
+The two tail qubits are **not** five atoms each and they do not represent ten
+extra atoms individually. The selector chooses up to ten atoms from the full
+graph, one at a time, by the marginal score above. For 20 heavy atoms, the
+other ten form one residual tail set: q10 summarizes its chemistry and q11
+summarizes its internal connectivity/interface with the selected backbone.
+Tail-to-backbone bonds are connected to q11; tail-to-tail bonds are summarized
+in the structural score, not emitted as individual gates.
+
+```mermaid
+flowchart LR
+    A[RDKit molecule graph<br/>20 heavy atoms] --> B[Canonicalize graph<br/>compute Morgan / role tokens]
+    B --> C[Greedy marginal coverage<br/>select up to 10 atoms]
+    C --> D[q0–q9<br/>10 selected atoms, one per qubit]
+    C --> E[Residual tail<br/>10 atoms in this example]
+    E --> F[q10: tail chemistry<br/>size + heteroatom / charge / donor / acceptor]
+    E --> G[q11: tail structure<br/>tail bonds + backbone interface]
+    D --> H[Ry atom features<br/>Rxx represented bonds]
+    F --> I[12-qubit state]
+    G --> I
+    H --> I
+    I --> J[Measure computational-basis bitstrings]
+    J --> K[Readout features<br/>4096 probabilities OR 12 Zi + 66 ZiZj]
+```
+
+For molecules with at most ten heavy atoms, every heavy atom gets a backbone
+qubit and the unused backbone wires remain idle; there is no residual tail if
+all atoms fit. For more than ten, all residual heavy atoms contribute to both
+global summary calculations, but the summary is lossy: exact tail atom
+identities, which tail atom carries which role, and individual tail-tail bond
+orders are not retained. The selector ranks atoms for coverage; it is not a
+graph coarsening or a guarantee that a medicinal-chemistry “pharmacophore
+core” is always preserved.
+
 #### RDKit, NetworkX, and what “reduction” means here
 
 `assign_qubits` parses the input with RDKit. For every strategy except the
@@ -230,8 +265,75 @@ Used to identify bridgehead atoms connecting molecular subgraphs.
 
 ### 1.4 Readout: Computational Basis Probabilities vs. Pauli Expectations
 
-* **Current Baseline Readout:** Full measurement in the computational basis ($Z$) with `qc.measure_all()` producing a 4,096-dimensional probability distribution $\vec{p} \in \mathbb{R}^{4096}$.
-* **Proposed EstimatorV2 Readout (Work with Abdul):** Measuring single-qubit Pauli expectations $\langle Z_i \rangle \in \mathbb{R}^{12}$ and two-qubit correlators $\langle Z_i Z_j \rangle \in \mathbb{R}^{66}$ to drastically eliminate finite shot-noise sparsity.
+The circuit still measures all 12 qubits in the computational ($Z$) basis. A
+single shot returns one 12-bit string, not all 4096 outcomes; the current
+pipeline keeps the 4096-bin empirical distribution as the SVM feature vector.
+The reduced-readout experiment instead compresses those same bitstrings into
+selected moments:
+
+$$\langle Z_i\rangle=\sum_{b\in\{0,1\}^{12}}p(b)(-1)^{b_i},\qquad
+\langle Z_iZ_j\rangle=\sum_{b\in\{0,1\}^{12}}p(b)(-1)^{b_i\oplus b_j}.$$
+
+There are 12 single-qubit moments and $\binom{12}{2}=66$ unordered pair
+correlators. They are **estimated jointly from the same computational-basis
+shots**—no additional measurement basis settings are needed. This reduces the
+classical feature dimension from 4096 to 12 (`Zi` only), 66 (`ZiZj` only), or
+78 (`Zi` + `ZiZj`). It changes the SVM representation, not the quantum circuit.
+
+Paired experiment on the balanced 250-molecule BBBP sample, ten stratified
+75/25 splits, chemical-coverage selector, exact NumPy statevector, and
+`StandardScaler + RBF-SVC`; the nested column tunes $C$ only inside each outer
+training fold:
+
+| Backbone property / readout | Features | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|---:|
+| Pauling / full probabilities | 4096 | 0.673 ± 0.064 | 0.654 ± 0.055 | 0.733 ± 0.060 |
+| Pauling / $Z_i$ | 12 | **0.698 ± 0.044** | **0.702 ± 0.045** | 0.755 ± 0.057 |
+| Pauling / $Z_iZ_j$ only | 66 | 0.563 ± 0.058 | 0.617 ± 0.035 | 0.665 ± 0.040 |
+| Pauling / $Z_i$ + $Z_iZ_j$ | 78 | 0.625 ± 0.042 | 0.637 ± 0.036 | 0.702 ± 0.047 |
+| TPSA / full probabilities | 4096 | **0.703 ± 0.061** | 0.674 ± 0.065 | 0.750 ± 0.076 |
+| TPSA / $Z_i$ | 12 | 0.686 ± 0.042 | 0.681 ± 0.045 | **0.770 ± 0.049** |
+| TPSA / $Z_iZ_j$ only | 66 | 0.670 ± 0.044 | 0.661 ± 0.050 | 0.740 ± 0.055 |
+| TPSA / $Z_i$ + $Z_iZ_j$ | 78 | 0.686 ± 0.040 | **0.682 ± 0.038** | 0.760 ± 0.040 |
+
+With fixed $C=10$, the full 4096-bin distribution is generally stronger than
+the moment features (see `pauli_readout_summary.csv`). With nested $C$, only
+$Z_i$ modestly raises the TPSA AUC (0.770 vs 0.750), while the full
+distribution retains higher TPSA accuracy (0.703 vs 0.686). For Pauling,
+$Z_i$ is better than full probabilities on these three metrics under nested
+$C$. **There is no readout that wins consistently across properties, metrics,
+and classifier tuning.** These are repeated random splits on a small sample,
+not independent test sets or a significance test; validate with scaffold-held-
+out data and finite-shot hardware counts before selecting a default. In
+particular, the values above are exact-statevector estimates and do not
+demonstrate reduced hardware shot noise.
+
+We additionally sampled five independent 1024-shot histograms from each exact
+statevector distribution and recomputed every readout from those same
+histograms (fixed $C=10$ in all cases):
+
+| Property / sampled readout | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| Pauling / full 4096-bin counts | 0.658 ± 0.049 | 0.596 ± 0.066 | **0.718 ± 0.058** |
+| Pauling / 12 $Z_i$ moments | **0.664 ± 0.054** | **0.662 ± 0.058** | 0.711 ± 0.057 |
+| TPSA / full 4096-bin counts | **0.712 ± 0.051** | 0.663 ± 0.064 | **0.744 ± 0.078** |
+| TPSA / 12 $Z_i$ moments | 0.650 ± 0.056 | 0.646 ± 0.053 | 0.711 ± 0.062 |
+| TPSA / 78 $Z_i$ + $Z_iZ_j$ moments | 0.665 ± 0.055 | **0.669 ± 0.053** | 0.715 ± 0.059 |
+
+These standard deviations span 5 shot repeats × 10 overlapping outer splits,
+so they are descriptive and not independent-sample confidence intervals. The
+finite-shot simulation suggests $Z_i$ can help Pauling F1 and accuracy a
+little, but the full counts retain better AUC; for TPSA, full counts remain
+stronger on accuracy and AUC. $Z_iZ_j$-only is poor for Pauling, and adding
+correlators does not recover the full TPSA readout. Counts were sampled from
+ideal NumPy statevectors, without device noise, readout error, or transpilation;
+this is not hardware validation. Therefore the reduced moments are worth
+testing on hardware for lower-dimensional downstream learning, but **these
+results do not show a general predictive improvement**.
+
+Reproduce with `python run_pauli_readout_comparison.py`; per-split metrics and
+run settings are saved as `pauli_readout_*.csv/json`. The feature-extraction
+unit tests check the parity convention and 12/66/78 dimensions.
 
 ### 1.5 What the literature suggests improving — and what is actually implemented
 
