@@ -67,6 +67,7 @@ def run_scaffold_cv(data, n_splits=5, seed=42):
 def _randomized_smiles(mol, count, seed):
     """Return distinct noncanonical traversals of one canonical molecule."""
     values = []
+    canonical = Chem.MolToSmiles(mol, canonical=True)
     # Request more than needed because symmetric structures often stringify
     # identically under different random traversals.
     for attempt in range(8):
@@ -76,6 +77,8 @@ def _randomized_smiles(mol, count, seed):
         for value in candidates:
             parsed = Chem.MolFromSmiles(value)
             if parsed is None or Chem.MolToSmiles(parsed, canonical=True) != Chem.MolToSmiles(mol, canonical=True):
+                continue
+            if value == canonical:
                 continue
             if value not in values:
                 values.append(value)
@@ -133,7 +136,16 @@ def run_smiles_robustness(data, n_splits=5, n_random=4, seed=42):
         flip_rows.append({"method": method, "n_molecules_with_multiple_variants": len(tested),
                           "molecules_with_prediction_flip": int((tested["nunique"] > 1).sum()),
                           "prediction_flip_fraction": float((tested["nunique"] > 1).mean())})
-    return pd.DataFrame(rows), pd.DataFrame(flip_rows)
+    variant_summary = {
+        "molecules_with_four_distinct_randomized_smiles": sum(
+            len(values) == n_random for values in variants.values()
+        ),
+        "total_distinct_randomized_smiles": sum(map(len, variants.values())),
+        "molecules_with_at_least_two_randomized_smiles": sum(
+            len(values) > 1 for values in variants.values()
+        ),
+    }
+    return pd.DataFrame(rows), pd.DataFrame(flip_rows), variant_summary
 
 
 def _summarize(performance):
@@ -151,7 +163,7 @@ def main():
         for s in data["canonical_smiles"].astype(str)
     })
     scaffold, fold_info = run_scaffold_cv(data)
-    randomized, flips = run_smiles_robustness(data)
+    randomized, flips, variant_summary = run_smiles_robustness(data)
     out = Path("molecular_encoding")
     scaffold.to_csv(out / "robustness_scaffold_per_fold.csv", index=False)
     _summarize(scaffold).to_csv(out / "robustness_scaffold_summary.csv", index=False)
@@ -162,8 +174,7 @@ def main():
     settings = {**info, "n_splits": 5, "split": "StratifiedGroupKFold by Bemis-Murcko scaffold; acyclic molecules share one group",
                 "n_murcko_groups": scaffold_count,
                 "randomized_smiles_per_molecule": 4,
-                "molecules_with_four_distinct_randomized_smiles": 248,
-                "total_distinct_randomized_smiles": 994,
+                **variant_summary,
                 "randomized_evaluation": "models trained on canonical SMILES; test molecules evaluated through randomized equivalent traversals",
                 "classifier": "StandardScaler + RBF-SVC, C=10",
                 "readout": "exact NumPy statevector, 4096 basis probabilities",

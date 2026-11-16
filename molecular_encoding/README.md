@@ -68,6 +68,67 @@ all remaining heavy atoms are compressed into two scalar tail channels and
 some atom-level detail is lost. Consequently, selection quality must be
 evaluated together with classification and information-retention diagnostics.
 
+#### RDKit, NetworkX, and what “reduction” means here
+
+`assign_qubits` parses the input with RDKit. For every strategy except the
+intentional `SMILES_ORDER` control, it converts the molecule to canonical
+SMILES and reparses it before atom assignment; equivalent traversals therefore
+start from the same atom ordering. RDKit supplies molecular sanitization,
+elements, charges, bond orders, stereochemistry, aromaticity/rings, Morgan
+environments and donor/acceptor roles. The separate `preprocess_smiles`
+function can also strip salts/counterions, optionally apply the repository's
+simple N/O-neutralization rules, filter by molecular weight/heavy-atom count,
+and canonicalize. It is not the selector itself; its neutralization is
+approximate and can erase ionization states, so use `neutralize=False` when
+those states must be retained.
+
+The public assignment path builds a NetworkX graph of heavy atoms and bonds
+and calculates unweighted betweenness centrality, used as the small centrality
+term in the selector. **NetworkX does not simplify or contract the molecule**
+in the default path. Here, “10+2” means ten selected atoms remain individually
+represented on `q0–q9`; the other heavy atoms are summarized by two global
+tail channels on `q10–q11`, and tail-to-tail bonds are not individually
+encoded. This is a fixed-width, lossy feature representation—not a chemically
+exact reduced molecule.
+
+The optional `GRAPH_POOLED` map is the path that actually coarsens the graph.
+It contracts only adjacent low-salience atoms into at most ten connected
+clusters, builds a quotient graph, and aggregates atom/bond descriptors per
+cluster/edge. This is implemented directly on RDKit's molecular graph, not
+with NetworkX. The same operation could use NetworkX, but it must merge only
+bonded clusters, preserve edge types, protect important roles where possible,
+and preprocess disconnected salts rather than inventing edges between them.
+This pooled prototype remains experimental and has not improved BBBP so far.
+For a bond joining endpoint atoms $i$ and $j$, its contraction cost is:
+
+```text
+c_ij = 8(s_i + s_j)
+       - 1[both endpoints are carbon]
+       - 0.75[aromaticity_i == aromaticity_j]
+       - 0.50[ring_i == ring_j]
+       - 0.50[bond is aromatic or conjugated]
+```
+
+Here $s_i$ counts charged, donor, acceptor, heteroatom, and stereogenic flags;
+lower-cost bonds are contracted first, with canonical ranks resolving ties.
+This is a fixed heuristic: it delays merging salient atoms but cannot
+guarantee that every donor/acceptor remains a singleton at a strict
+ten-cluster limit.
+
+The implemented contraction is deterministic: begin with one cluster per
+heavy atom; repeatedly enumerate bonds joining different clusters; assign
+each candidate a cost that penalizes charged, donor, acceptor, heteroatom and
+stereogenic endpoints, while preferring compatible carbon, aromatic, ring,
+and conjugated environments; merge the lowest-cost adjacent pair; break ties
+with canonical ranks; stop at ten clusters. Since only adjacent clusters are
+merged, every cluster remains connected. A NetworkX version would preserve
+the same node/bond attributes and use the same contraction invariant; it is
+not required for this implementation. Molecules with more than ten
+disconnected heavy-atom components are rejected by the pooling function
+rather than joined artificially. The quotient graph stores aggregated bond
+order, aromatic/conjugated/ring/stereo character and edge counts; the two
+remaining qubits carry whole-molecule context.
+
 #### Controlled comparison against source-SMILES order
 
 To isolate the effect of atom assignment, `run_selection_comparison.py`
@@ -105,12 +166,22 @@ environment. It follows their Qiskit matrix conventions, but a direct
 cross-check against Qiskit's `Statevector` should be run when a working Qiskit
 installation is available.
 
+This is a random stratified split comparison, not a scaffold-held-out test.
+It initially shows the traversal-ordered control ahead on this split protocol;
+the scaffold-grouped validation later in the README tests generalization to
+new frameworks and reaches a different conclusion.
+
 ```python
 from molecular_encoding import encode_molecule
 from molecular_encoding.atom_selection import Strategy, assign_qubits, describe_assignment
 
 assignment = assign_qubits("CC(=O)Nc1ccccc1", strategy=Strategy.CHEMICAL_COVERAGE)
 print(describe_assignment(assignment))  # Includes per-qubit selection rationale.
+for qubit, atom_idx in enumerate(assignment.backbone_indices):
+    atom = assignment.mol.GetAtomWithIdx(atom_idx)
+    reasons = assignment.selection_metadata["selection_reasons"].get(atom_idx, ())
+    print(qubit, atom_idx, atom.GetSymbol(), reasons)
+print("tail atom indices:", assignment.tail_indices)
 qc, metadata = encode_molecule("CC(=O)Nc1ccccc1")
 ```
 
@@ -231,63 +302,6 @@ with NumPy because Qiskit was unavailable, so this prototype has not been
 validated against Qiskit's simulator or hardware. The graph feature-map
 references motivate the design but do not predict its performance on BBBP.
 
-#### What the chemistry selector actually does
-
-For `CHEMICAL_COVERAGE`, the input SMILES is parsed with RDKit, converted to
-canonical SMILES, and parsed again before atoms are assigned. Consequently,
-the selector starts from the molecular graph, not the character positions in
-the caller's SMILES. RDKit supplies sanitized atoms/bonds, stereochemistry,
-aromaticity/ring perception, atom-centered Morgan environments (radii 0, 1,
-and 2), and donor/acceptor features from its standard `BaseFeatures.fdef`
-definitions. Formal charge and heteroatom/aromatic/ring roles are also made
-explicit.
-
-The ten backbone atoms are selected greedily. At each step the algorithm
-chooses the atom whose previously-uncovered Morgan environments and chemical
-roles contribute the largest weighted gain. A Morgan environment is weighted
-by `1/sqrt(within-molecule frequency)`, so a rare environment is more useful
-than another copy of a common one. Fixed role weights favor charge and
-hydrogen-bond donor/acceptor chemistry; small graph-centrality and adjacency
-bonuses favor useful connectivity. Canonical atom ranks break exact ties only;
-they are not an importance score. The process stops at ten selected heavy
-atoms or when all heavy atoms have been selected. The chosen order determines
-which selected atom maps to each backbone wire; the remainder forms the tail.
-
-Concretely, the default selector's greedy score is the sum of newly covered
-token weights, plus `0.15 × normalized NetworkX betweenness` and
-`0.20 × fraction of heavy-atom neighbors already selected`. The fixed role
-weights are charge 3.0, donor 2.5, acceptor 2.0, heteroatom 1.25, aromatic
-0.75 and ring 0.50; rare Morgan environments use `1/sqrt(frequency)`. These
-are hand-chosen, target-independent heuristics, not learned BBBP importance
-weights. This means “chemical selector” describes what information it tries
-to cover; it is not a guarantee of the highest score on every dataset.
-
-NetworkX is used to represent the heavy-atom graph and calculate graph
-centrality for this selector. **It does not simplify or contract the molecule.**
-In the standard 10+2 path, the ten selected atoms remain individual wires;
-unselected atoms are summarized into two global tail channels, and bonds
-within the tail are not individually represented. Thus this is a fixed-width
-feature projection, not a chemically exact reduced molecule.
-
-If preserving *all* atoms in connected fragments is needed, the separate
-experimental `GRAPH_POOLED` encoder contracts adjacent atoms into at most ten
-connected clusters, builds a quotient graph, and aggregates atom and bond
-descriptors for each cluster/edge. That implementation operates on the RDKit
-molecular graph directly; it does not currently use NetworkX for contraction.
-An equivalent NetworkX implementation could construct nodes/edges from the
-RDKit molecule, protect high-salience charged/donor/acceptor/stereogenic atoms,
-merge only adjacent low-salience atoms, and stop at ten connected supernodes.
-It must preserve bond attributes and reject or preprocess disconnected salts;
-arbitrarily joining components would invent chemistry. The pooled option has
-not improved the BBBP result so far, so the default remains atom selection.
-
-RDKit preprocessing is a separate step: `preprocess_smiles` parses and
-sanitizes, strips counterions/salts by retaining the largest fragment,
-optionally applies the repository's simple N/O neutralization rules, applies
-MW/heavy-atom filters, and canonicalizes. This is useful for reproducible
-indices, but the neutralization rules are approximate and may erase relevant
-ionization states; use `neutralize=False` when those states must be preserved.
-
 #### Scaffold-held-out and randomized-SMILES validation
 
 The random stratified split above can put close analogues in both train and
@@ -295,14 +309,15 @@ test sets. `python run_robustness_comparison.py` adds a five-fold
 `StratifiedGroupKFold` evaluation grouped by Bemis–Murcko scaffold. Exact
 duplicate canonical molecules and contradictory-label structures are removed
 before splitting, as in the earlier benchmark. Acyclic molecules have an
-empty Murcko scaffold and are kept together as one group. Separately, each
-held-out molecule is rewritten into four distinct randomized SMILES
-traversals; models are trained on canonical strings and tested on each
-equivalent traversal. Prediction-flip fraction measures how often a
-molecule's class prediction changes across its alternate strings. This is a
-robustness test, not a new independent sample, and results remain descriptive
-for the 250-molecule balanced sample. The fold-level outputs and settings are
-saved as `robustness_*.csv/json`.
+empty Murcko scaffold and are kept together as one group. The sampled set has
+250 molecules and 182 scaffold groups; fold test sizes are therefore unequal.
+Separately, each held-out molecule is rewritten into up to four distinct
+noncanonical randomized SMILES traversals; models are trained on canonical
+strings and tested on each equivalent traversal. Prediction-flip fraction
+measures how often a molecule's class prediction changes across its alternate
+strings. This is a robustness test, not a new independent sample, and results
+remain descriptive for this balanced sample. The fold-level outputs and
+settings are saved as `robustness_*.csv/json`.
 
 For the scaffold comparison, the SMILES-order control is deliberately given
 the canonical SMILES string in both train and test: it still selects the first
@@ -310,19 +325,19 @@ ten heavy atoms of that traversal, but does not inherit arbitrary source-file
 serialization. The separate randomized-SMILES test then changes only the
 held-out strings, making traversal sensitivity directly visible.
 
-| Evaluation | Representation | Accuracy | ROC-AUC |
-|---|---|---:|---:|
-| Five-fold scaffold-held-out | SMILES-order + Pauling | 0.651 ± 0.103 | 0.741 ± 0.116 |
-| Five-fold scaffold-held-out | Chemical coverage + Pauling | 0.717 ± 0.059 | 0.752 ± 0.053 |
-| Five-fold scaffold-held-out | Chemical coverage + TPSA | **0.731 ± 0.065** | **0.771 ± 0.082** |
-| Randomized-SMILES inference test | SMILES-order + Pauling | 0.516 ± 0.089 | 0.613 ± 0.106 |
-| Randomized-SMILES inference test | Chemical coverage + Pauling | **0.715 ± 0.053** | **0.750 ± 0.048** |
+| Evaluation | Representation | Accuracy | F1 | ROC-AUC |
+|---|---|---:|---:|---:|
+| Five-fold scaffold-held-out | SMILES-order + Pauling | 0.651 ± 0.103 | 0.653 ± 0.119 | 0.741 ± 0.116 |
+| Five-fold scaffold-held-out | Chemical coverage + Pauling | 0.717 ± 0.059 | **0.706 ± 0.089** | 0.752 ± 0.053 |
+| Five-fold scaffold-held-out | Chemical coverage + TPSA | **0.731 ± 0.065** | 0.695 ± 0.098 | **0.771 ± 0.082** |
+| Randomized-SMILES inference test | SMILES-order + Pauling | 0.513 ± 0.090 | 0.608 ± 0.081 | 0.611 ± 0.110 |
+| Randomized-SMILES inference test | Chemical coverage + Pauling | **0.714 ± 0.053** | **0.699 ± 0.083** | **0.748 ± 0.050** |
 
-Across alternate traversals, **121/248** molecules with multiple distinct
-randomized strings (48.8%) had at least one changed prediction with the
+Across alternate traversals, **122/248** molecules with multiple distinct
+randomized strings (49.2%) had at least one changed prediction with the
 SMILES-order model; the chemistry-coverage model changed **0/248**. Four
-distinct traversals were generated for 248 molecules; two symmetric cases
-yielded only one distinct string, for 994 alternate strings total. The
+distinct noncanonical traversals were generated for 246 molecules; four
+molecules yielded fewer, for 990 molecule–traversal variants total. The
 randomized inference scores average fold-by-traversal results after fitting on
 canonical SMILES, so they quantify a deliberate representation-shift test;
 they are not directly comparable to ordinary held-out CV scores. The
@@ -477,12 +492,14 @@ the same interpretation across molecules.
 
 ---
 
-## 3. Benchmarks on BBBP (Stratified 10-Split CV)
+## 3. Historical BBBP benchmarks (legacy experiments)
 
-The table below records earlier experiments with the strategies named in each
-row. It does **not** evaluate the new `CHEMICAL_COVERAGE` selector or the
-`global` tail summaries; rerun the same fixed splits before attributing any
-benchmark result to this implementation.
+The table below is retained from earlier exploratory runs and is **not a
+controlled comparison of the current implementation**. In particular, its
+selection, embedding, tail, and validation protocols differ from those in
+Section 1.1 and the scaffold-held-out experiment above. Treat the values as
+historical context only; use the paired, reproducible experiments above when
+describing current performance.
 
 | Method / Atom Selection Strategy | Accuracy | AUC-ROC | F1-Score | Status / Insight |
 |---|:---:|:---:|:---:|---|
@@ -490,7 +507,7 @@ benchmark result to this implementation.
 | **Quantum SMILES Original (Paper baseline)** | 0.570 ± 0.103 | 0.613 ± 0.110 | 0.524 ± 0.165 | SMILES-syntax dependent |
 | **Quantum Murcko Scaffold + Centrality** | 0.595 ± 0.106 | 0.673 ± 0.070 | 0.587 ± 0.125 | Scaffold invariant, but suffers carbon-angle degeneracy |
 | **Quantum Pharmacophore-First** | **0.675 ± 0.119** | **0.736 ± 0.095** | **0.697 ± 0.115** | Prioritizes heteroatoms & H-bonding |
-| **Quantum Canonical Morgan Rank** 🚀 | **0.695 ± 0.079** | **0.760 ± 0.093** | **0.725 ± 0.072** | **Massive leap (+12.5% Acc, +14.7% AUC)** |
+| **Quantum Canonical Morgan Rank** | **0.695 ± 0.079** | **0.760 ± 0.093** | **0.725 ± 0.072** | Historical reported result; not reproduced in the controlled tests above |
 | Negative Control (Random atom assignment) | 0.575 ± 0.060 | 0.559 ± 0.112 | 0.543 ± 0.106 | Topology scrambled (drops to random baseline) |
 
 ### 3.1 Ablation of implemented atomic properties and tail modes
