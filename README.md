@@ -13,6 +13,21 @@ This work introduces the **10+2 Structure-Preserving Quantum Feature Map** — a
 
 The framework is evaluated on MoleculeNet's BBBP benchmark and six additional datasets using the **ibm_kingston** quantum processor via IBM Quantum, with 10-split stratified cross-validation throughout.
 
+The repository also includes a modular, RDKit-based chemistry-aware strategy
+for assigning atoms to the ten individually encoded backbone qubits. It greedily
+maximizes marginal coverage of local Morgan environments and chemical roles,
+with small graph-centrality and connectivity terms; the remaining heavy atoms
+are compressed into two global tail channels. The full mathematical definition,
+assumptions, and reproducibility details are in
+[`molecular_encoding/README.md`](molecular_encoding/README.md).
+
+An initial controlled BBBP comparison found that this new selector did **not**
+outperform selection by source-SMILES order in the tested pipeline (mean
+accuracy 0.678 vs. 0.781 across ten paired splits). This is a descriptive
+ablation on a balanced 250-molecule sample, not evidence of universal
+superiority for SMILES order. See the method README and the saved per-split
+results for the protocol and limitations.
+
 ---
 
 ## Repository Structure

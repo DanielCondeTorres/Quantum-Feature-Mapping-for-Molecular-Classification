@@ -22,6 +22,87 @@ for every endpoint. Task-specific weights must be evaluated on held-out splits.
 For symmetry-equivalent atoms, a unique chemical identity may not exist;
 canonical tie-breaking supplies a reproducible representative.
 
+#### Methodological description
+
+Let a sanitized molecule be a heavy-atom graph $G=(V,E)$, with $|V|=N$.
+For every atom $i$, define a token set $T_i$ consisting of (i) its radius-0,
+radius-1, and radius-2 Morgan environments, with bond types and stereochemistry,
+and (ii) the chemical-role indicators charge, hydrogen-bond donor, acceptor,
+heteroatom, aromatic atom, and ring atom. The implementation uses RDKit's
+standard chemical feature definitions for donor/acceptor perception. Morgan
+environments are sparse identifiers associated with their central atom, so
+distinct local environments are not merged by a fixed-length fingerprint.
+
+The selector grows a set $S$ greedily, starting from $S_0=\varnothing$. At
+iteration $t$, the marginal score for an unselected atom is
+
+$$
+J(i\mid S_t)=\sum_{u\in T_i\setminus C(S_t)} w(u)
+              +0.15\,\widetilde C_i
+              +0.20\,\frac{|N(i)\cap S_t|}{\max(1,\deg(i))},
+$$
+
+where $C(S_t)=\bigcup_{j\in S_t}T_j$ is the set of already covered tokens,
+$\widetilde C_i$ is normalized graph centrality (degree centrality by default,
+or a caller-supplied centrality), and $N(i)$ is the heavy-atom neighborhood.
+For a Morgan token occurring $f(u)$ times in the molecule,
+$w(u)=f(u)^{-1/2}$, which reduces the marginal value of repeated environments.
+Role-token weights are fixed as follows: formal charge 3.0, donor 2.5,
+acceptor 2.0, heteroatom 1.25, aromaticity 0.75, and ring membership 0.50.
+At each step the atom maximizing $J$ is added and its tokens become covered;
+the procedure stops after $\min(10,N)$ atoms. Exact score ties are broken by
+RDKit canonical atom rank. Ranks therefore make the selection reproducible,
+but do not enter the chemical score. See the [RDKit Morgan fingerprint
+documentation](https://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints)
+for the underlying circular-environment construction.
+
+This is a deterministic, label-free heuristic—not an optimality guarantee or
+a claim that the selected atoms are universally the most predictive. The
+coverage term rewards chemical diversity, while the small graph terms retain
+central and connected context. It is permutation-independent after canonical
+SMILES reparsing, except for the unavoidable representative choice among
+symmetry-equivalent atoms. The ten-atom limit is an architectural bottleneck:
+all remaining heavy atoms are compressed into two scalar tail channels and
+some atom-level detail is lost. Consequently, selection quality must be
+evaluated together with classification and information-retention diagnostics.
+
+#### Controlled comparison against source-SMILES order
+
+To isolate the effect of atom assignment, `run_selection_comparison.py`
+compares `SMILES_ORDER` (the ten atoms encountered first in the input SMILES)
+and `CHEMICAL_COVERAGE` on the same 250 balanced BBBP molecules, canonical
+structure deduplication, ten stratified 75/25 splits, SVC with an RBF kernel
+($C=10$), standardization fitted within each training split, and the same
+global two-channel tail encoding. The quantum feature map is exactly evolved
+as a 12-qubit statevector and read out as all 4,096 computational-basis
+probabilities. This controlled ablation changes only the backbone-selection
+strategy; it does not reproduce the older tail encoding or hardware noise.
+
+| Backbone selection | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| Source-SMILES order | 0.781 ± 0.053 | 0.772 ± 0.060 | 0.844 ± 0.043 |
+| Chemical coverage | 0.678 ± 0.053 | 0.657 ± 0.063 | 0.730 ± 0.053 |
+| Paired difference (coverage − SMILES) | −0.103 ± 0.076 | −0.115 ± 0.084 | −0.115 ± 0.066 |
+
+Values are mean ± sample standard deviation across the ten repeated splits;
+chemical coverage won on 0/10 splits for each metric. These results do **not**
+support the claim that this selector improves BBBP prediction in the current
+pipeline. They motivate further ablations (including the fixed weights, tail
+features, and representation/readout), not a post-hoc change of weights based
+on the reported test splits. The balanced 250-molecule subset is a small
+benchmark sample, and repeated shuffle-splits are correlated; these summary
+statistics are descriptive rather than a formal significance test. Exact
+per-split results and settings are saved in
+`selection_vs_smiles_per_split.csv`, `selection_vs_smiles_summary.csv`, and
+`selection_vs_smiles_settings.json`. Reproduce from the repository root with
+`python run_selection_comparison.py`.
+
+The comparison uses NumPy exact statevector evolution of the circuit's $Ry$
+and $Rxx$ gates because Qiskit could not be imported in the execution
+environment. It follows their Qiskit matrix conventions, but a direct
+cross-check against Qiskit's `Statevector` should be run when a working Qiskit
+installation is available.
+
 ```python
 from molecular_encoding import encode_molecule
 from molecular_encoding.atom_selection import Strategy, assign_qubits, describe_assignment
