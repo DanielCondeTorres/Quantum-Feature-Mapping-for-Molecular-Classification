@@ -244,6 +244,7 @@
       -0.0023331511316379877
     ]
   ],
+  "readout": "exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
   "classifier": "StandardScaler + RBF SVC, C=10 (matched existing fixed-C comparison)",
   "warning": "PCA itself is unsupervised; selected-PC arm uses a simple train-only point-biserial correlation screen, an exploratory selection rule that needs nested-CV/scaffold confirmation"
 }

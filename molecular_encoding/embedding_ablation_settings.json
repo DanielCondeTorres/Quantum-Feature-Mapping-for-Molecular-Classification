@@ -10,7 +10,7 @@
   "seed":42,
   "selector":"chemical_coverage",
   "classifier":"StandardScaler + SVC(RBF, C=10)",
-  "readout":"exact NumPy statevector; 4096 basis probabilities",
+  "readout":"exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
   "property_configurations":[
     "pauling_en",
     "gasteiger_charge",

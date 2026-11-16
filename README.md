@@ -9,7 +9,7 @@
 
 ## Overview
 
-This work introduces the **10+2 Structure-Preserving Quantum Feature Map** — a fixed-width 12-qubit encoding designed for NISQ-compatible molecular classification. Ten qubits encode the molecular graph backbone via Ry rotations (Pauling electronegativity) and Rxx entangling gates (bond order), while two auxiliary qubits compress the remaining atomic tail. The resulting 4,096-dimensional probability vector is passed to an RBF-kernel SVM for classification.
+This work introduces the **10+2 Structure-Preserving Quantum Feature Map** — a fixed-width 12-qubit encoding designed for NISQ-compatible molecular classification. Ten qubits encode the molecular graph backbone via Ry rotations (Pauling electronegativity) and Rxx entangling gates (bond order), while two auxiliary qubits compress the remaining atomic tail. The original paper pipeline used the full 4,096-bin measurement distribution. In the current modular molecular-classification runners, the default SVM readout is instead 78 Pauli moments: 12 $\langle Z_i\rangle$ and 66 $\langle Z_iZ_j\rangle$, estimated jointly from the same computational-basis bitstrings. Full probabilities remain available as a diagnostic and legacy comparator.
 
 The framework is evaluated on MoleculeNet's BBBP benchmark and six additional datasets using the **ibm_kingston** quantum processor via IBM Quantum, with 10-split stratified cross-validation throughout.
 
@@ -21,9 +21,10 @@ are compressed into two global tail channels. The full mathematical definition,
 assumptions, and reproducibility details are in
 [`molecular_encoding/README.md`](molecular_encoding/README.md).
 
-An initial controlled BBBP comparison found that this new selector did **not**
-outperform selection by source-SMILES order in the tested pipeline (mean
-accuracy 0.678 vs. 0.781 across ten paired splits). This is a descriptive
+An initial controlled BBBP comparison using the current 78-feature $Z_i+Z_iZ_j$
+readout found that this new selector did **not** outperform selection by
+source-SMILES order in the tested pipeline (mean accuracy 0.632 vs. 0.732
+across ten paired splits). This is a descriptive
 ablation on a balanced 250-molecule sample, not evidence of universal
 superiority for SMILES order. See the method README and the saved per-split
 results for the protocol and limitations.

@@ -19,7 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from molecular_encoding.atom_selection import Strategy
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_probabilities
+from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
 
 
 def _score(y_true, prediction, decision):
@@ -54,8 +54,8 @@ def run_scaffold_cv(data, n_splits=5, seed=42):
         })
         for name, strategy, prop in configs:
             print(f"Scaffold fold {fold}/{n_splits}: {name}", flush=True)
-            X_train = np.stack([statevector_probabilities(smiles[i], strategy, prop) for i in train_idx])
-            X_test = np.stack([statevector_probabilities(smiles[i], strategy, prop) for i in test_idx])
+            X_train = np.stack([statevector_features(smiles[i], strategy, prop) for i in train_idx])
+            X_test = np.stack([statevector_features(smiles[i], strategy, prop) for i in test_idx])
             scaler = StandardScaler().fit(X_train)
             model = SVC(kernel="rbf", C=10.0).fit(scaler.transform(X_train), y[train_idx])
             pred = model.predict(scaler.transform(X_test))
@@ -109,13 +109,13 @@ def run_smiles_robustness(data, n_splits=5, n_random=4, seed=42):
             ("SMILES_ORDER__pauling", Strategy.SMILES_ORDER),
             ("CHEMICAL_COVERAGE__pauling", Strategy.CHEMICAL_COVERAGE),
         ):
-            X_train = np.stack([statevector_probabilities(canonical[i], strategy) for i in train_idx])
+            X_train = np.stack([statevector_features(canonical[i], strategy) for i in train_idx])
             scaler = StandardScaler().fit(X_train)
             model = SVC(kernel="rbf", C=10.0).fit(scaler.transform(X_train), y[train_idx])
             for variant_idx in range(n_random):
                 active = [i for i in test_idx if len(variants[i]) > variant_idx]
                 X_test = np.stack([
-                    statevector_probabilities(variants[i][variant_idx], strategy)
+                    statevector_features(variants[i][variant_idx], strategy)
                     for i in active
                 ])
                 scaled = scaler.transform(X_test)
@@ -177,7 +177,7 @@ def main():
                 **variant_summary,
                 "randomized_evaluation": "models trained on canonical SMILES; test molecules evaluated through randomized equivalent traversals",
                 "classifier": "StandardScaler + RBF-SVC, C=10",
-                "readout": "exact NumPy statevector, 4096 basis probabilities",
+        "readout": "exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
                 "source_note": "one balanced canonical-deduplicated BBBP sample of 250 molecules; descriptive small-sample evaluation"}
     (out / "robustness_comparison_settings.json").write_text(json.dumps(settings, indent=2) + "\n")
     print("SCAFFOLD SPLIT\n", _summarize(scaffold).to_string(index=False))

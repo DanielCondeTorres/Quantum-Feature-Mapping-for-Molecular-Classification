@@ -16,7 +16,7 @@
     100.0,
     1000.0
   ],
-  "readout":"exact NumPy statevector; 4096 computational-basis probabilities",
+  "readout":"exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
   "graph_pooling_max_clusters":10,
   "random_smiles_invariance_checks":1000,
   "note":"Proposed graph-pooled circuit; Qiskit hardware not run."

@@ -10,5 +10,6 @@
   "seed":42,
   "classifier":"StandardScaler + SVC(RBF, C=10), AUC from decision score",
   "tail_mode":"global two-channel",
-  "readout":"exact 4096-state computational-basis probabilities"
+  "readout":"z_zz",
+  "readout_features":78
 }

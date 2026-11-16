@@ -21,7 +21,7 @@ from sklearn.svm import SVC
 from molecular_encoding.atom_selection import Strategy, assign_qubits
 from molecular_encoding.pca_features import FoldPCA, molecular_descriptor_matrix
 from molecular_encoding.tail_summaries import summarize_tail
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_probabilities
+from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
 
 
 def _score(features, y, splits, name):
@@ -45,13 +45,13 @@ def main():
                                          random_state=42).split(y, y))
     descriptors = molecular_descriptor_matrix(smiles)
     records = []
-    pca_quantum = np.zeros((len(smiles), 1 << 12), dtype=float)
+    pca_quantum = np.zeros((len(smiles), 78), dtype=float)
     selected_pc_quantum = np.zeros_like(pca_quantum)
     pca_classical = np.zeros((len(smiles), 2), dtype=float)
     variance, train_pc_label_corr = [], []
 
     print("Computing established quantum TPSA baseline...", flush=True)
-    baseline = np.stack([statevector_probabilities(s, Strategy.CHEMICAL_COVERAGE,
+    baseline = np.stack([statevector_features(s, Strategy.CHEMICAL_COVERAGE,
                                                    prop="tpsa_contrib") for s in smiles])
     for fold, (train, test) in enumerate(splits, 1):
         pca = FoldPCA(9).fit(descriptors[train])
@@ -67,12 +67,12 @@ def main():
         selected_component = int(np.argmax(np.abs(corr)))
         pca_classical[:, :] = angles / np.pi
         for idx, smi in enumerate(smiles):
-            pca_quantum[idx] = statevector_probabilities(
+            pca_quantum[idx] = statevector_features(
                 smi, Strategy.CHEMICAL_COVERAGE, prop="tpsa_contrib",
                 tail_angles=(float(angles[idx, 0]), float(angles[idx, 1])))
             assignment = assign_qubits(smi, Strategy.CHEMICAL_COVERAGE)
             tail = summarize_tail(assignment.mol, assignment.backbone_indices)
-            selected_pc_quantum[idx] = statevector_probabilities(
+            selected_pc_quantum[idx] = statevector_features(
                 smi, Strategy.CHEMICAL_COVERAGE, prop="tpsa_contrib",
                 tail_angles=(float(all_angles[idx, selected_component]),
                             tail.structural_angle))
@@ -105,6 +105,7 @@ def main():
                 "quantum": "PC1+PC2 arm replaces q10/q11 global summaries; selected-PC arm selects max absolute PC-label correlation on outer training only for q10 and retains structural tail summary on q11",
                 "explained_variance_ratio_per_fold": variance,
                 "train_only_pc_label_correlations_per_fold": train_pc_label_corr,
+                "readout": "exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
                 "classifier": "StandardScaler + RBF SVC, C=10 (matched existing fixed-C comparison)",
                 "warning": "PCA itself is unsupervised; selected-PC arm uses a simple train-only point-biserial correlation screen, an exploratory selection rule that needs nested-CV/scaffold confirmation"}
     (out / "pca_bbbp_settings.json").write_text(json.dumps(settings, indent=2) + "\n")

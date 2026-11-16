@@ -19,7 +19,7 @@ from molecular_encoding.atom_selection import Strategy
 from run_selection_comparison import (
     _evaluate_svm,
     _prepare_unique_balanced_data,
-    statevector_probabilities,
+    statevector_features,
 )
 
 
@@ -57,9 +57,9 @@ def run_ablation(
     records = []
     for prop, tail_mode in configurations:
         name = f"{prop}__tail_{tail_mode}"
-        print(f"Generating exact statevector features: {name}", flush=True)
+        print(f"Generating 78-dimensional Zi+ZiZj features: {name}", flush=True)
         features = np.stack([
-            statevector_probabilities(
+            statevector_features(
                 value,
                 Strategy.CHEMICAL_COVERAGE,
                 prop=prop,
@@ -96,7 +96,7 @@ def run_ablation(
         "seed": seed,
         "selector": Strategy.CHEMICAL_COVERAGE.value,
         "classifier": "StandardScaler + SVC(RBF, C=10)",
-        "readout": "exact NumPy statevector; 4096 basis probabilities",
+        "readout": "exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
         "property_configurations": list(PROPERTIES),
         "tail_configurations": list(TAIL_MODES),
     }

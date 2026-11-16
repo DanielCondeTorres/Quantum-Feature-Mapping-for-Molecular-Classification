@@ -1,9 +1,9 @@
 """Paired BBBP comparison: SMILES-order versus chemistry-coverage selection.
 
 The quantum feature map is evaluated with exact NumPy statevector evolution.
-Its gates (Ry and Rxx) follow the same rotation conventions as Qiskit. This
-keeps the experiment runnable in CPU environments without a working Qiskit
-installation while preserving the 12-qubit probability features.
+Its gates (Ry and Rxx) follow the same rotation conventions as Qiskit. The
+default classifier input is a compact vector of 12 Zi and 66 ZiZj moments;
+the exact 4096-outcome probabilities remain available for diagnostics.
 
 Run from the repository root:
 
@@ -37,6 +37,7 @@ N_BACKBONE = 10
 N_TAIL = 2
 N_QUBITS = N_BACKBONE + N_TAIL
 ALPHA = 0.1
+DEFAULT_READOUT = "z_zz"
 
 
 def _apply_ry(state: np.ndarray, theta: float, qubit: int) -> None:
@@ -177,6 +178,29 @@ def statevector_probabilities(
     return probabilities / probabilities.sum()
 
 
+def statevector_features(
+    smiles: str,
+    strategy: Strategy,
+    prop: str = "pauling_en",
+    tail_mode: str = "global",
+    *,
+    readout: str = DEFAULT_READOUT,
+    tail_angles: tuple[float, float] | None = None,
+) -> np.ndarray:
+    """Simulate a molecule and return model features from the chosen readout.
+
+    The project evaluation default is the 78-dimensional ``z_zz`` vector.
+    ``statevector_probabilities`` remains available for exact 4096-bin
+    diagnostics and backward-compatible comparisons.
+    """
+    from molecular_encoding.readout import features_from_probabilities
+
+    probabilities = statevector_probabilities(
+        smiles, strategy, prop=prop, tail_mode=tail_mode, tail_angles=tail_angles
+    )
+    return features_from_probabilities(probabilities, readout=readout)[0]
+
+
 def _prepare_unique_balanced_data(path: Path, per_class: int, seed: int):
     """Parse, canonical-deduplicate, remove label conflicts, and balance BBBP."""
     frame = pd.read_csv(path).dropna(subset=["p_np", "smiles"]).copy()
@@ -265,13 +289,13 @@ def run_comparison(
     splits = list(splitter.split(np.zeros(len(y)), y))
 
     print(f"Dataset: {len(data)} unique balanced molecules ({per_class}/class)")
-    print("Generating exact statevector features for SMILES_ORDER...")
+    print(f"Generating {DEFAULT_READOUT} readout features for SMILES_ORDER...")
     X_smiles = np.stack([
-        statevector_probabilities(s, Strategy.SMILES_ORDER) for s in smiles
+        statevector_features(s, Strategy.SMILES_ORDER) for s in smiles
     ])
-    print("Generating exact statevector features for CHEMICAL_COVERAGE...")
+    print(f"Generating {DEFAULT_READOUT} readout features for CHEMICAL_COVERAGE...")
     X_coverage = np.stack([
-        statevector_probabilities(s, Strategy.CHEMICAL_COVERAGE) for s in smiles
+        statevector_features(s, Strategy.CHEMICAL_COVERAGE) for s in smiles
     ])
 
     records = []
@@ -313,7 +337,8 @@ def run_comparison(
         "seed": seed,
         "classifier": "StandardScaler + SVC(RBF, C=10), AUC from decision score",
         "tail_mode": "global two-channel",
-        "readout": "exact 4096-state computational-basis probabilities",
+        "readout": DEFAULT_READOUT,
+        "readout_features": 78,
     }
     return fold_metrics, summary, settings
 

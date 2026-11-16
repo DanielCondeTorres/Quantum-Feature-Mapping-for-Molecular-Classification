@@ -91,7 +91,7 @@ flowchart LR
     G --> I
     H --> I
     I --> J[Measure computational-basis bitstrings]
-    J --> K[Readout features<br/>4096 probabilities OR 12 Zi + 66 ZiZj]
+    J --> K[Default classifier input<br/>12 Zi + 66 ZiZj = 78 features]
 ```
 
 For molecules with at most ten heavy atoms, every heavy atom gets a backbone
@@ -172,18 +172,19 @@ and `CHEMICAL_COVERAGE` on the same 250 balanced BBBP molecules, canonical
 structure deduplication, ten stratified 75/25 splits, SVC with an RBF kernel
 ($C=10$), standardization fitted within each training split, and the same
 global two-channel tail encoding. The quantum feature map is exactly evolved
-as a 12-qubit statevector and read out as all 4,096 computational-basis
-probabilities. This controlled ablation changes only the backbone-selection
+as a 12-qubit statevector and the classifier uses the default 78-dimensional
+`z_zz` readout. This controlled ablation changes only the backbone-selection
 strategy; it does not reproduce the older tail encoding or hardware noise.
 
 | Backbone selection | Accuracy | F1 | ROC-AUC |
 |---|---:|---:|---:|
-| Source-SMILES order | 0.781 ± 0.053 | 0.772 ± 0.060 | 0.844 ± 0.043 |
-| Chemical coverage | 0.678 ± 0.053 | 0.657 ± 0.063 | 0.730 ± 0.053 |
-| Paired difference (coverage − SMILES) | −0.103 ± 0.076 | −0.115 ± 0.084 | −0.115 ± 0.066 |
+| Source-SMILES order | 0.732 ± 0.055 | 0.725 ± 0.054 | 0.815 ± 0.044 |
+| Chemical coverage | 0.632 ± 0.037 | 0.632 ± 0.048 | 0.697 ± 0.043 |
+| Paired difference (coverage − SMILES) | −0.100 ± 0.068 | −0.093 ± 0.075 | −0.118 ± 0.049 |
 
 Values are mean ± sample standard deviation across the ten repeated splits;
-chemical coverage won on 0/10 splits for each metric. These results do **not**
+chemical coverage won on 0/10 accuracy folds, 1/10 F1 folds and 0/10 AUC
+folds. These results do **not**
 support the claim that this selector improves BBBP prediction in the current
 pipeline. They motivate further ablations (including the fixed weights, tail
 features, and representation/readout), not a post-hoc change of weights based
@@ -266,24 +267,44 @@ Used to identify bridgehead atoms connecting molecular subgraphs.
 ### 1.4 Readout: Computational Basis Probabilities vs. Pauli Expectations
 
 The circuit still measures all 12 qubits in the computational ($Z$) basis. A
-single shot returns one 12-bit string, not all 4096 outcomes; the current
-pipeline keeps the 4096-bin empirical distribution as the SVM feature vector.
-The reduced-readout experiment instead compresses those same bitstrings into
-selected moments:
+single shot returns one 12-bit string, not all 4096 outcomes. The updated
+modular classification runners use the **78-dimensional $Z_i+Z_iZ_j$
+readout as their default model input**; the 4096-bin distribution remains
+available for historical and diagnostic comparisons. Both representations
+are post-processing of the same measured strings. The Pauli readout compresses
+them into moments:
 
 $$\langle Z_i\rangle=\sum_{b\in\{0,1\}^{12}}p(b)(-1)^{b_i},\qquad
 \langle Z_iZ_j\rangle=\sum_{b\in\{0,1\}^{12}}p(b)(-1)^{b_i\oplus b_j}.$$
 
 There are 12 single-qubit moments and $\binom{12}{2}=66$ unordered pair
 correlators. They are **estimated jointly from the same computational-basis
-shots**—no additional measurement basis settings are needed. This reduces the
-classical feature dimension from 4096 to 12 (`Zi` only), 66 (`ZiZj` only), or
-78 (`Zi` + `ZiZj`). It changes the SVM representation, not the quantum circuit.
+shots**—no additional measurement basis settings are needed. The default
+therefore reduces the model input from up to 4096 bins to 78 moments. Ablations
+can use 12 (`z` only), 66 (`zz` only), or 4096 (`full`) features. This changes
+the SVM representation, not the quantum circuit or measurement basis.
+
+The implementation is isolated in `molecular_encoding/readout.py`:
+
+```python
+from molecular_encoding import features_from_counts
+
+# `counts` is the result.get_counts() mapping from a 12-qubit measure_all run.
+X = features_from_counts(counts, readout="z_zz")  # shape (1, 78)
+```
+
+For exact simulators, use `features_from_probabilities(p, readout="z_zz")`.
+The project evaluation helper `statevector_features(...)` applies this
+readout to simulated states. `statevector_probabilities(...)` remains the
+explicit 4096-bin diagnostic API.
 
 Paired experiment on the balanced 250-molecule BBBP sample, ten stratified
 75/25 splits, chemical-coverage selector, exact NumPy statevector, and
 `StandardScaler + RBF-SVC`; the nested column tunes $C$ only inside each outer
-training fold:
+training fold. **These current modular-runner scores use the default 78-feature
+$Z_i+Z_iZ_j$ readout.** The prior full-distribution and individual-moment
+ablation scores below are retained as historical readout experiments, not as
+the current default benchmark:
 
 | Backbone property / readout | Features | Accuracy | F1 | ROC-AUC |
 |---|---:|---:|---:|---:|
@@ -329,7 +350,10 @@ correlators does not recover the full TPSA readout. Counts were sampled from
 ideal NumPy statevectors, without device noise, readout error, or transpilation;
 this is not hardware validation. Therefore the reduced moments are worth
 testing on hardware for lower-dimensional downstream learning, but **these
-results do not show a general predictive improvement**.
+results do not show a general predictive improvement**. The project now uses
+the combined 78-feature readout as requested, not because the benchmark proves
+it has the best prediction score. The full-output mode remains selectable for
+ablation and legacy reproduction.
 
 Reproduce with `python run_pauli_readout_comparison.py`; per-split metrics and
 run settings are saved as `pauli_readout_*.csv/json`. The feature-extraction
@@ -379,7 +403,7 @@ harder to estimate ([Thanasilp et al., 2024](https://doi.org/10.1038/s41467-024-
 #### Prototype design and current performance
 
 The prototype was evaluated on the same balanced 250-molecule BBBP sample,
-ten stratified 75/25 splits, 4,096 exact statevector probabilities, and
+ten stratified 75/25 splits, the default 78 exact statevector Pauli moments, and
 `StandardScaler + RBF-SVC (C=10)`. We also selected `C` from
 `{0.1, 1, 10, 100, 1000}` using three-fold CV **inside each outer training
 fold**. The atom-selected TPSA comparator uses the best existing property from
@@ -387,12 +411,12 @@ the earlier ablation.
 
 | Representation | Accuracy | F1 | ROC-AUC |
 |---|---:|---:|---:|
-| Source-SMILES order, fixed $C=10$ | 0.781 ± 0.053 | 0.772 ± 0.060 | 0.844 ± 0.043 |
-| `CHEMICAL_COVERAGE` + `tpsa_contrib`, fixed $C=10$ | 0.706 ± 0.058 | 0.678 ± 0.069 | 0.727 ± 0.063 |
-| `GRAPH_POOLED`, fixed $C=10$ | 0.510 ± 0.048 | 0.444 ± 0.058 | 0.536 ± 0.060 |
-| Source-SMILES order, nested $C$ | 0.781 ± 0.034 | 0.771 ± 0.044 | 0.873 ± 0.038 |
-| `CHEMICAL_COVERAGE` + TPSA, nested $C$ | 0.703 ± 0.061 | 0.674 ± 0.065 | 0.750 ± 0.076 |
-| `GRAPH_POOLED`, nested $C$ | 0.486 ± 0.037 | 0.403 ± 0.244 | 0.530 ± 0.058 |
+| Source-SMILES order, fixed $C=10$ | 0.732 ± 0.055 | 0.725 ± 0.054 | 0.815 ± 0.044 |
+| `CHEMICAL_COVERAGE` + `tpsa_contrib`, fixed $C=10$ | 0.667 ± 0.055 | 0.670 ± 0.053 | 0.716 ± 0.059 |
+| `GRAPH_POOLED`, fixed $C=10$ | 0.548 ± 0.063 | 0.537 ± 0.064 | 0.576 ± 0.063 |
+| Source-SMILES order, nested $C$ | 0.762 ± 0.052 | 0.759 ± 0.057 | 0.833 ± 0.046 |
+| `CHEMICAL_COVERAGE` + TPSA, nested $C$ | 0.686 ± 0.051 | 0.682 ± 0.054 | 0.760 ± 0.049 |
+| `GRAPH_POOLED`, nested $C$ | 0.487 ± 0.056 | 0.448 ± 0.073 | 0.552 ± 0.063 |
 
 This first graph-pooling design **does not improve BBBP prediction**; it is
 near chance and remains substantially below both controls, including after
@@ -429,14 +453,14 @@ held-out strings, making traversal sensitivity directly visible.
 
 | Evaluation | Representation | Accuracy | F1 | ROC-AUC |
 |---|---|---:|---:|---:|
-| Five-fold scaffold-held-out | SMILES-order + Pauling | 0.651 ± 0.103 | 0.653 ± 0.119 | 0.741 ± 0.116 |
-| Five-fold scaffold-held-out | Chemical coverage + Pauling | 0.717 ± 0.059 | **0.706 ± 0.089** | 0.752 ± 0.053 |
-| Five-fold scaffold-held-out | Chemical coverage + TPSA | **0.731 ± 0.065** | 0.695 ± 0.098 | **0.771 ± 0.082** |
-| Randomized-SMILES inference test | SMILES-order + Pauling | 0.513 ± 0.090 | 0.608 ± 0.081 | 0.611 ± 0.110 |
-| Randomized-SMILES inference test | Chemical coverage + Pauling | **0.714 ± 0.053** | **0.699 ± 0.083** | **0.748 ± 0.050** |
+| Five-fold scaffold-held-out | SMILES-order + Pauling | **0.647 ± 0.126** | 0.634 ± 0.163 | 0.731 ± 0.103 |
+| Five-fold scaffold-held-out | Chemical coverage + Pauling | 0.628 ± 0.074 | 0.617 ± 0.088 | 0.704 ± 0.054 |
+| Five-fold scaffold-held-out | Chemical coverage + TPSA | 0.718 ± 0.074 | **0.701 ± 0.110** | **0.773 ± 0.087** |
+| Randomized-SMILES inference test | SMILES-order + Pauling | 0.546 ± 0.084 | **0.617 ± 0.092** | 0.579 ± 0.115 |
+| Randomized-SMILES inference test | Chemical coverage + Pauling | **0.624 ± 0.066** | 0.608 ± 0.083 | **0.701 ± 0.050** |
 
-Across alternate traversals, **122/248** molecules with multiple distinct
-randomized strings (49.2%) had at least one changed prediction with the
+Across alternate traversals, **167/248** molecules with multiple distinct
+randomized strings (67.3%) had at least one changed prediction with the
 SMILES-order model; the chemistry-coverage model changed **0/248**. Four
 distinct noncanonical traversals were generated for 246 molecules; four
 molecules yielded fewer, for 990 molecule–traversal variants total. The
@@ -523,10 +547,10 @@ Resultados con simulador exacto NumPy, mismo SVC RBF con $C=10$ y mismos folds:
 
 | Mapa / representación | Accuracy | F1 | ROC-AUC |
 |---|---:|---:|---:|
-| TPSA backbone + resumen químico/estructural existente | 0.706 ± 0.058 | 0.678 ± 0.069 | 0.727 ± 0.063 |
-| TPSA backbone + PCA PC1/PC2 en q10/q11 | 0.683 ± 0.051 | 0.654 ± 0.063 | **0.735 ± 0.046** |
-| TPSA backbone + PC elegida en train + resumen estructural | 0.683 ± 0.054 | 0.652 ± 0.066 | 0.730 ± 0.055 |
-| RDKit globales reducidos a PC1/PC2 + SVC (control clásico) | 0.676 ± 0.052 | **0.684 ± 0.061** | 0.728 ± 0.065 |
+| TPSA backbone + resumen químico/estructural existente | 0.667 ± 0.055 | 0.667 ± 0.061 | 0.716 ± 0.062 |
+| TPSA backbone + PCA PC1/PC2 en q10/q11 | 0.663 ± 0.061 | 0.667 ± 0.067 | 0.716 ± 0.062 |
+| TPSA backbone + PC elegida en train + resumen estructural | 0.651 ± 0.055 | 0.649 ± 0.059 | 0.710 ± 0.060 |
+| RDKit globales reducidos a PC1/PC2 + SVC (control clásico) | **0.676 ± 0.060** | **0.684 ± 0.060** | **0.728 ± 0.060** |
 
 Lectura: en esta prueba PCA **no mejora de manera convincente** el embedding
 actual. PC1 explica aproximadamente 37–41% de la varianza y PC2 23–26%; PC1
@@ -572,17 +596,18 @@ leakage-safe run that selects C inside each training fold:
 
 | Representation | Accuracy, fixed C=10 | ROC-AUC, fixed C=10 | Accuracy, nested C | ROC-AUC, nested C |
 |---|---:|---:|---:|---:|
-| SMILES order + Pauling | 0.781 ± 0.053 | 0.844 ± 0.043 | 0.781 ± 0.034 | 0.873 ± 0.038 |
-| Existing chemical coverage + Pauling | 0.678 ± 0.053 | 0.730 ± 0.053 | 0.673 ± 0.064 | 0.733 ± 0.060 |
-| Existing chemical coverage + TPSA | **0.706 ± 0.058** | 0.727 ± 0.063 | **0.703 ± 0.061** | 0.750 ± 0.076 |
-| Existing chemical coverage + multi-feature | 0.576 ± 0.046 | 0.632 ± 0.060 | 0.606 ± 0.066 | 0.649 ± 0.065 |
-| New physicochemical coverage + Pauling | 0.637 ± 0.038 | 0.679 ± 0.050 | 0.635 ± 0.076 | 0.715 ± 0.052 |
-| New physicochemical coverage + multi-feature | 0.548 ± 0.031 | 0.603 ± 0.051 | 0.549 ± 0.046 | 0.591 ± 0.055 |
+| SMILES order + Pauling | 0.732 ± 0.055 | 0.815 ± 0.044 | 0.762 ± 0.052 | 0.833 ± 0.046 |
+| Existing chemical coverage + Pauling | 0.632 ± 0.037 | 0.697 ± 0.043 | 0.625 ± 0.049 | 0.702 ± 0.056 |
+| Existing chemical coverage + TPSA | **0.667 ± 0.055** | 0.716 ± 0.059 | **0.686 ± 0.051** | **0.760 ± 0.049** |
+| Existing chemical coverage + multi-feature | 0.622 ± 0.057 | 0.640 ± 0.075 | 0.610 ± 0.064 | 0.638 ± 0.076 |
+| New physicochemical coverage + Pauling | 0.597 ± 0.057 | 0.624 ± 0.069 | 0.568 ± 0.051 | 0.666 ± 0.072 |
+| New physicochemical coverage + multi-feature | 0.568 ± 0.053 | 0.611 ± 0.080 | 0.497 ± 0.062 | 0.669 ± 0.061 |
 
 This is a useful negative result: the richer multi-feature map and the new
 selector did **not** beat the simpler chemistry baseline on this small BBBP
 sample. The best tested chemistry arm remains the already-implemented TPSA
-contribution (mean accuracy 0.706), while the traversal-dependent SMILES arm
+contribution (mean accuracy 0.667 fixed-$C$; mean ROC-AUC 0.760 with nested
+$C$), while the traversal-dependent SMILES arm
 is still higher. Therefore these additions are opt-in experiments, not a
 claim that chemical invariance has already improved predictive performance.
 More axes increase circuit complexity and may dilute useful signals; larger
@@ -719,27 +744,28 @@ descriptive and not a significance test.
 
 | Property / tail mode | Accuracy | F1 | ROC-AUC |
 |---|---:|---:|---:|
-| `pauling_en` / `global` (default) | 0.678 ± 0.053 | 0.657 ± 0.063 | **0.730 ± 0.053** |
-| `gasteiger_charge` / `global` | 0.652 ± 0.080 | 0.606 ± 0.095 | 0.720 ± 0.086 |
-| `crippen_logp` / `global` | 0.597 ± 0.056 | 0.601 ± 0.044 | 0.636 ± 0.062 |
-| `tpsa_contrib` / `global` | **0.706 ± 0.058** | **0.678 ± 0.069** | 0.727 ± 0.063 |
-| `combined_bbb` / `global` | 0.616 ± 0.070 | 0.609 ± 0.071 | 0.649 ± 0.066 |
-| `composite_pharmacophore` / `global` | 0.689 ± 0.067 | 0.663 ± 0.078 | 0.729 ± 0.068 |
-| `pauling_en` / `sum` | 0.578 ± 0.049 | 0.581 ± 0.057 | 0.647 ± 0.048 |
-| `pauling_en` / `stats` | 0.575 ± 0.053 | 0.581 ± 0.059 | 0.628 ± 0.057 |
-| `pauling_en` / `pharm` | 0.592 ± 0.042 | 0.576 ± 0.041 | 0.643 ± 0.046 |
+| `pauling_en` / `global` (default) | 0.632 ± 0.037 | 0.632 ± 0.048 | 0.697 ± 0.043 |
+| `gasteiger_charge` / `global` | 0.665 ± 0.048 | **0.676 ± 0.051** | 0.704 ± 0.076 |
+| `crippen_logp` / `global` | 0.592 ± 0.052 | 0.612 ± 0.044 | 0.646 ± 0.070 |
+| `tpsa_contrib` / `global` | **0.667 ± 0.068** | 0.670 ± 0.066 | **0.716 ± 0.059** |
+| `combined_bbb` / `global` | 0.614 ± 0.040 | 0.621 ± 0.046 | 0.663 ± 0.044 |
+| `composite_pharmacophore` / `global` | 0.633 ± 0.061 | 0.646 ± 0.062 | 0.699 ± 0.043 |
+| `pauling_en` / `sum` | 0.621 ± 0.048 | 0.622 ± 0.038 | 0.660 ± 0.067 |
+| `pauling_en` / `stats` | 0.583 ± 0.046 | 0.582 ± 0.046 | 0.630 ± 0.057 |
+| `pauling_en` / `pharm` | 0.622 ± 0.029 | 0.614 ± 0.047 | 0.673 ± 0.037 |
 
 **Direct answer: TPSA beats Pauling electronegativity on some BBBP metrics in
 these tests, but not on every metric or protocol.** In the matched 10-split,
-fixed-$C=10$ ablation above, TPSA improves mean accuracy from 0.678 to 0.706
-(+0.029) and F1 from 0.657 to 0.678 (+0.021), but mean ROC-AUC is very slightly
-lower (0.727 vs 0.730). It wins accuracy on 6/10 paired splits. With $C$
-selected inside each training fold, TPSA is higher on accuracy (0.703 vs
-0.673), F1 (0.674 vs 0.654), and ROC-AUC (0.750 vs 0.733).
+fixed-$C=10$ ablation above, TPSA improves mean accuracy from 0.632 to 0.667
+(+0.035) and ROC-AUC from 0.697 to 0.716 (+0.020), while Gasteiger has a
+slightly higher mean F1 (0.676 vs 0.670). With $C$ selected inside each
+training fold, TPSA is higher than Pauling on accuracy (0.686 vs 0.625), F1
+(0.682 vs 0.637), and ROC-AUC (0.760 vs 0.702).
 
 On the separate scaffold-held-out test, TPSA is again higher on accuracy
-(0.731 vs 0.717) and ROC-AUC (0.771 vs 0.752), while Pauling has slightly
-higher F1 (0.706 vs 0.695). Thus, **TPSA is the stronger tested choice for
+(0.718 vs 0.628) and ROC-AUC (0.773 vs 0.704); F1 is also higher for TPSA
+(0.701 vs 0.617) in the current scaffold folds. Thus, **TPSA is the stronger
+tested choice for
 accuracy and ranking (AUC) under the chemistry-based selector, but we cannot
 claim it universally beats Pauling**: metric and validation protocol matter,
 and the uncertainty intervals overlap. Neither feature beats the source-SMILES

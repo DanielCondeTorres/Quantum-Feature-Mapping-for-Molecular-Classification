@@ -15,7 +15,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 
 from molecular_encoding.atom_selection import Strategy
 from run_graph_pooling_comparison import _evaluate_nested_c, _evaluate_svm
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_probabilities
+from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     records = []
     for name, strategy, prop in configs:
         print(f"Generating {name}", flush=True)
-        features = np.stack([statevector_probabilities(s, strategy, prop=prop) for s in smiles])
+        features = np.stack([statevector_features(s, strategy, prop=prop) for s in smiles])
         records.extend(_evaluate_svm(features, y, splits, name))
         records.extend(_evaluate_nested_c(features, y, splits, 42, f"{name}__nested_C"))
     per_split = pd.DataFrame(records)
@@ -50,7 +50,7 @@ def main():
                 "features": [name for name, _, _ in configs],
                 "nested_C_grid": [.1, 1, 10, 100, 1000],
                 "classifier": "StandardScaler + RBF SVC; inner-C selection uses training folds only",
-                "readout": "NumPy exact statevector, 4096 basis probabilities",
+                "readout": "NumPy exact statevector; 78 features (12 Zi + 66 ZiZj)",
                 "selector": "physicochemical_coverage adds Morgan, roles, fixed descriptor bins and graph-distance diversity; legacy chemical_coverage remains unchanged"}
     (out / "multifeature_comparison_settings.json").write_text(json.dumps(settings, indent=2) + "\n")
     print(summary.to_string(index=False))

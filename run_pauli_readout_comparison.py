@@ -18,29 +18,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from molecular_encoding.atom_selection import Strategy
+from molecular_encoding.readout import features_from_probabilities
 from run_selection_comparison import _prepare_unique_balanced_data, statevector_probabilities
 
 
-N_QUBITS = 12
-
-
-def pauli_z_features(probabilities: np.ndarray) -> dict[str, np.ndarray]:
-    """Compute exact <Zi> and all unordered <ZiZj> from basis probabilities."""
-    probabilities = np.asarray(probabilities, dtype=float)
-    if probabilities.ndim == 1:
-        probabilities = probabilities[None, :]
-    if probabilities.ndim != 2 or probabilities.shape[1] != (1 << N_QUBITS):
-        raise ValueError("Expected one or more probability vectors of length 4096")
-    basis = np.arange(probabilities.shape[1])
-    z_signs = np.column_stack([1.0 - 2.0 * ((basis >> q) & 1)
-                               for q in range(N_QUBITS)])
-    pair_signs = np.column_stack([
-        1.0 - 2.0 * (((basis >> i) ^ (basis >> j)) & 1)
-        for i in range(N_QUBITS) for j in range(i + 1, N_QUBITS)
-    ])
-    z = probabilities @ z_signs
-    pairs = probabilities @ pair_signs
-    return {"Z_only": z, "ZZ_only": pairs, "Z_plus_ZZ": np.column_stack((z, pairs))}
+def _readout_ablation(probabilities: np.ndarray) -> dict[str, np.ndarray]:
+    """Build labeled views using the shared production readout module."""
+    return {
+        "Z_only": features_from_probabilities(probabilities, "z"),
+        "ZZ_only": features_from_probabilities(probabilities, "zz"),
+        "Z_plus_ZZ": features_from_probabilities(probabilities, "z_zz"),
+    }
 
 
 def _score(features, y, splits, name):
@@ -96,7 +84,7 @@ def main():
         print(f"Building 4096-outcome features: {prop}", flush=True)
         full = np.stack([statevector_probabilities(
             s, Strategy.CHEMICAL_COVERAGE, prop=prop) for s in smiles])
-        features = pauli_z_features(full)
+        features = _readout_ablation(full)
         features["full_4096_probabilities"] = full
         for readout, matrix in features.items():
             label = f"CHEMICAL_COVERAGE__{prop}__{readout}"
@@ -110,7 +98,7 @@ def main():
             rng = np.random.default_rng(4200 + repeat_seed)
             counts = np.stack([rng.multinomial(1024, p) for p in full])
             empirical = counts / 1024.0
-            sampled_features = pauli_z_features(empirical)
+            sampled_features = _readout_ablation(empirical)
             sampled_features["full_4096_probabilities"] = empirical
             for readout, matrix in sampled_features.items():
                 label = f"CHEMICAL_COVERAGE__{prop}__{readout}"

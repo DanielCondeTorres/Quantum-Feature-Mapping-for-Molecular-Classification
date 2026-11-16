@@ -15,6 +15,12 @@ from .capacity_analysis import backbone_retention_profile, dataset_backbone_summ
 from .backbone_selection import BackboneSelection, select_backbone_atoms
 from .tail_summaries import TailSummary, summarize_tail
 from .graph_pooling import PooledMolecule, gate_operations, pool_molecule
+from .readout import (
+    DEFAULT_READOUT,
+    features_from_counts,
+    features_from_probabilities,
+    pauli_z_moments,
+)
 
 def encode_molecule(
     smiles: str,
@@ -90,5 +96,6 @@ __all__ = [
     "backbone_retention_profile", "dataset_backbone_summary",
     "BackboneSelection", "select_backbone_atoms", "TailSummary", "summarize_tail",
     "PooledMolecule", "pool_molecule", "gate_operations",
-    "encode_graph_pooled_molecule",
+    "encode_graph_pooled_molecule", "DEFAULT_READOUT", "pauli_z_moments",
+    "features_from_probabilities", "features_from_counts",
 ]

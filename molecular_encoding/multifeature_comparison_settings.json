@@ -22,6 +22,6 @@
     1000
   ],
   "classifier": "StandardScaler + RBF SVC; inner-C selection uses training folds only",
-  "readout": "NumPy exact statevector, 4096 basis probabilities",
+  "readout": "NumPy exact statevector; 78 features (12 Zi + 66 ZiZj)",
   "selector": "physicochemical_coverage adds Morgan, roles, fixed descriptor bins and graph-distance diversity; legacy chemical_coverage remains unchanged"
 }

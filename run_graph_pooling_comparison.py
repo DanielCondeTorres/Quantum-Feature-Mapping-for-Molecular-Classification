@@ -24,10 +24,11 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 from molecular_encoding.atom_selection import Strategy
 from molecular_encoding.graph_pooling import N_QUBITS, gate_operations, pool_molecule
+from molecular_encoding.readout import features_from_probabilities
 from run_selection_comparison import (
     _evaluate_svm,
     _prepare_unique_balanced_data,
-    statevector_probabilities,
+    statevector_features,
 )
 
 
@@ -129,14 +130,17 @@ def run_comparison(dataset: Path = Path("BBBP.csv"), per_class: int = 125,
     n_invariance_checks = verify_random_smiles_invariance(smiles, n_variants=4)
     feature_sets = {
         "SMILES_ORDER__pauling_global": np.stack([
-            statevector_probabilities(s, Strategy.SMILES_ORDER, "pauling_en", "global")
+            statevector_features(s, Strategy.SMILES_ORDER, "pauling_en", "global")
             for s in smiles
         ]),
         "CHEMICAL_COVERAGE__tpsa_global": np.stack([
-            statevector_probabilities(s, Strategy.CHEMICAL_COVERAGE, "tpsa_contrib", "global")
+            statevector_features(s, Strategy.CHEMICAL_COVERAGE, "tpsa_contrib", "global")
             for s in smiles
         ]),
-        "GRAPH_POOLED__proposed": np.stack([pooled_probabilities(s) for s in smiles]),
+        "GRAPH_POOLED__proposed": np.stack([
+            features_from_probabilities(pooled_probabilities(s), readout="z_zz")[0]
+            for s in smiles
+        ]),
     }
     records = []
     for method, features in feature_sets.items():
@@ -160,7 +164,7 @@ def run_comparison(dataset: Path = Path("BBBP.csv"), per_class: int = 125,
         "n_splits": n_splits, "test_size": test_size, "seed": seed,
         "classifier": "StandardScaler + SVC(RBF, C=10)",
         "nested_C_grid": [0.1, 1.0, 10.0, 100.0, 1000.0],
-        "readout": "exact NumPy statevector; 4096 computational-basis probabilities",
+        "readout": "exact NumPy statevector; 78 features (12 Zi + 66 ZiZj)",
         "graph_pooling_max_clusters": 10,
         "random_smiles_invariance_checks": n_invariance_checks,
         "note": "Proposed graph-pooled circuit; Qiskit hardware not run.",
