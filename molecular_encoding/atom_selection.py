@@ -8,7 +8,8 @@ The key design decision in this module:
   (0–9, individually resolved) and which go to the tail (compressed into
   qubits 10–11)?
 
-Four strategies are implemented, plus the original SMILES-order baseline.
+Multiple strategies are available, including chemistry coverage, canonical
+ordering and pharmacophore baselines, plus a SMILES-order control.
 
 SMILES-INVARIANCE NOTE
 ----------------------
@@ -25,8 +26,8 @@ Internally, each molecule is converted to a NetworkX graph:
     V = {atom_idx: {symbol, atomic_num, ...}}
     E = {(i, j): {bond_order, is_aromatic, is_in_ring}}
 
-Centrality measures (betweenness, degree) are computed on this graph to
-rank atoms by their structural importance. See _build_mol_graph().
+Centrality measures (betweenness, degree) are computed on this heavy-atom
+graph. The default chemistry-coverage selector lives in backbone_selection.py.
 """
 
 from __future__ import annotations
@@ -41,6 +42,8 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
+from .backbone_selection import select_backbone_atoms
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -49,10 +52,11 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 class Strategy(enum.Enum):
     """Atom-to-qubit assignment strategies."""
     SMILES_ORDER         = "smiles_order"         # Original / baseline (SMILES-dependent)
-    CANONICAL_RANK       = "canonical_rank"        # RDKit Morgan rank (SMILES-invariant, highest accuracy)
+    CANONICAL_RANK       = "canonical_rank"        # Deterministic canonical ordering baseline
     PHARMACOPHORE_FIRST  = "pharmacophore_first"   # Heteroatoms & H-bonding prioritized
     SCAFFOLD_CENTRALITY  = "scaffold_centrality"   # Murcko scaffold first, then betweenness
     RANDOM               = "random"                # Negative control (shuffled)
+    CHEMICAL_COVERAGE    = "chemical_coverage"     # Morgan environments + chemical roles
 
 
 @dataclass
@@ -74,6 +78,8 @@ class QubitAssignment:
     graph           : NetworkX DiGraph of the molecule (for visualization)
     centrality      : dict {atom_idx: betweenness_centrality} (all atoms)
     scaffold_atoms  : set of atom indices that are part of the Murcko scaffold
+    selection_metadata: marginal scores and feature tokens for the selected
+                        atoms (populated by CHEMICAL_COVERAGE)
     """
     smiles          : str
     n_backbone      : int
@@ -86,11 +92,12 @@ class QubitAssignment:
     graph           : object = None   # networkx.Graph
     centrality      : dict = field(default_factory=dict)
     scaffold_atoms  : set  = field(default_factory=set)
+    selection_metadata: dict = field(default_factory=dict)
 
 
 def assign_qubits(
     smiles: str,
-    strategy: Strategy = Strategy.CANONICAL_RANK,
+    strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
     n_backbone: int = 10,
     n_tail: int = 2,
     random_seed: int = 42,
@@ -101,7 +108,7 @@ def assign_qubits(
     Parameters
     ----------
     smiles      : str       Canonical SMILES string (run preprocess_smiles first).
-    strategy    : Strategy  One of the four ordering strategies.
+    strategy    : Strategy  Selection policy (chemical coverage by default).
     n_backbone  : int       Number of individually-resolved qubits (default 10).
     n_tail      : int       Number of tail / summary qubits (default 2).
     random_seed : int       Used only for Strategy.RANDOM.
@@ -113,6 +120,10 @@ def assign_qubits(
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
+    if n_backbone <= 0:
+        raise ValueError("n_backbone must be a positive integer")
+    if n_tail < 0:
+        raise ValueError("n_tail must be non-negative")
 
     # RDKit atom indices reflect the input traversal.  Reparse the canonical
     # SMILES before every graph-based strategy so tie breaks cannot inherit a
@@ -123,7 +134,7 @@ def assign_qubits(
         mol = Chem.MolFromSmiles(canonical_smiles)
         smiles = canonical_smiles
 
-    n_atoms = mol.GetNumHeavyAtoms()
+    heavy_indices = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1]
 
     # Build molecular graph (always, for visualization and centrality)
     G, centrality = _build_mol_graph(mol)
@@ -133,22 +144,31 @@ def assign_qubits(
     ranks = list(Chem.CanonicalRankAtoms(mol))
 
     # --- Select backbone atom indices by strategy ---
+    selection_metadata = {}
     if strategy == Strategy.SMILES_ORDER:
-        ordered = [atom.GetIdx() for atom in mol.GetAtoms()]
+        ordered = heavy_indices
 
     elif strategy == Strategy.CANONICAL_RANK:
-        ordered = sorted(range(n_atoms), key=lambda i: ranks[i])
+        ordered = sorted(heavy_indices, key=lambda i: ranks[i])
 
     elif strategy == Strategy.PHARMACOPHORE_FIRST:
-        ordered = _pharmacophore_order(mol, ranks)
+        ordered = _pharmacophore_order(mol, ranks, heavy_indices)
 
     elif strategy == Strategy.SCAFFOLD_CENTRALITY:
-        ordered = _scaffold_centrality_order(mol, scaffold_atom_set, centrality, ranks)
+        ordered = _scaffold_centrality_order(mol, scaffold_atom_set, centrality, ranks, heavy_indices)
 
     elif strategy == Strategy.RANDOM:
-        ordered = list(range(n_atoms))
+        ordered = list(heavy_indices)
         rng = random.Random(random_seed)
         rng.shuffle(ordered)
+
+    elif strategy == Strategy.CHEMICAL_COVERAGE:
+        selection = select_backbone_atoms(mol, n_backbone, centrality)
+        ordered = list(selection.selected_atoms + selection.tail_atoms)
+        selection_metadata = {
+            "selection_scores": dict(selection.scores),
+            "selection_reasons": dict(selection.reasons),
+        }
 
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
@@ -171,6 +191,7 @@ def assign_qubits(
         graph            = G,
         centrality       = centrality,
         scaffold_atoms   = scaffold_atom_set,
+        selection_metadata = selection_metadata,
     )
 
 
@@ -182,7 +203,7 @@ def _build_mol_graph(mol) -> Tuple[nx.Graph, dict]:
     """
     Build a NetworkX Graph from an RDKit molecule.
 
-    Nodes carry: symbol, atomic_num, is_in_ring, is_aromatic.
+    Heavy-atom nodes carry: symbol, atomic_num, is_in_ring, is_aromatic.
     Edges carry: bond_order (double counts as 2.0, aromatic as 1.5), is_aromatic.
 
     Returns the graph and betweenness centrality dict keyed by atom index.
@@ -190,6 +211,8 @@ def _build_mol_graph(mol) -> Tuple[nx.Graph, dict]:
     G = nx.Graph()
 
     for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() <= 1:
+            continue
         G.add_node(
             atom.GetIdx(),
             symbol      = atom.GetSymbol(),
@@ -199,6 +222,8 @@ def _build_mol_graph(mol) -> Tuple[nx.Graph, dict]:
         )
 
     for bond in mol.GetBonds():
+        if bond.GetBeginAtom().GetAtomicNum() <= 1 or bond.GetEndAtom().GetAtomicNum() <= 1:
+            continue
         G.add_edge(
             bond.GetBeginAtomIdx(),
             bond.GetEndAtomIdx(),
@@ -230,7 +255,7 @@ def _get_scaffold_atoms(mol) -> set:
         return set()
 
 
-def _pharmacophore_order(mol, canonical_ranks: List[int]) -> List[int]:
+def _pharmacophore_order(mol, canonical_ranks: List[int], heavy_indices: List[int]) -> List[int]:
     """
     Order atoms by pharmacophoric relevance for membrane/BBB permeability:
       - Heteroatoms (N, O, S, P, halogens) get top priority (Lipinski polar groups)
@@ -238,7 +263,8 @@ def _pharmacophore_order(mol, canonical_ranks: List[int]) -> List[int]:
       - Graph degree used as secondary tie-breaker
     """
     scores = []
-    for atom in mol.GetAtoms():
+    for atom_idx in heavy_indices:
+        atom = mol.GetAtomWithIdx(atom_idx)
         sym = atom.GetSymbol()
         is_hetero = 1 if sym not in ("C", "H") else 0
         is_donor = 1 if (sym in ("N", "O") and atom.GetTotalNumHs() > 0) else 0
@@ -252,7 +278,7 @@ def _pharmacophore_order(mol, canonical_ranks: List[int]) -> List[int]:
 
 
 def _scaffold_centrality_order(
-    mol, scaffold_atoms: set, centrality: dict, canonical_ranks: List[int]
+    mol, scaffold_atoms: set, centrality: dict, canonical_ranks: List[int], heavy_indices: List[int]
 ) -> List[int]:
     """
     Order atoms for SCAFFOLD_CENTRALITY strategy:
@@ -271,7 +297,7 @@ def _scaffold_centrality_order(
     - This ensures the most topologically and chemically important atoms always
       receive individually resolved backbone qubits, regardless of SMILES order.
     """
-    all_indices   = [atom.GetIdx() for atom in mol.GetAtoms()]
+    all_indices   = heavy_indices
     scaffold_part = sorted(
         [i for i in all_indices if i in scaffold_atoms],
         key=lambda i: (-centrality.get(i, 0.0), canonical_ranks[i]),
@@ -299,12 +325,19 @@ def describe_assignment(assignment: QubitAssignment) -> str:
         f"Atoms    : {mol.GetNumHeavyAtoms()} heavy atoms",
         f"Backbone : {assignment.n_backbone} qubits  "
         f"({len(assignment.backbone_indices)} assigned)",
-        f"Tail     : {len(assignment.tail_indices)} atoms → "
+        f"Tail     : {len(assignment.tail_indices)} heavy atoms → "
         f"{assignment.n_tail} summary qubits",
         "",
         "Qubit  Atom  Symbol  Centrality  In-Scaffold?",
         "-----  ----  ------  ----------  ------------",
     ]
+    if assignment.selection_metadata:
+        lines.append("Selection rationale:")
+        reasons_by_atom = assignment.selection_metadata.get("selection_reasons", {})
+        for qubit, atom_idx in enumerate(assignment.backbone_indices):
+            reasons = reasons_by_atom.get(atom_idx, ())
+            reason_text = ", ".join(reasons) if reasons else "tie-break / coverage"
+            lines.append(f"  q{qubit}: atom {atom_idx}; added {reason_text}")
     for qubit, atom_idx in enumerate(assignment.backbone_indices):
         atom   = mol.GetAtomWithIdx(atom_idx)
         c      = assignment.centrality.get(atom_idx, 0.0)
@@ -316,6 +349,5 @@ def describe_assignment(assignment: QubitAssignment) -> str:
 
     if assignment.tail_indices:
         tail_syms = [mol.GetAtomWithIdx(i).GetSymbol() for i in assignment.tail_indices]
-        lines.append(f"\nTail atoms: {tail_syms} → qubits {assignment.n_backbone}–"
-                     f"{assignment.n_backbone + assignment.n_tail - 1}")
+        lines.append(f"\nTail atoms (pooled): {tail_syms}")
     return "\n".join(lines)

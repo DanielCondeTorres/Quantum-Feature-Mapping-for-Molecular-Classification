@@ -15,7 +15,9 @@ CIRCUIT STRUCTURE (same as QAMP 2026, generalized)
       Default: θᵢ = α · χᵢ²  (Pauling electronegativity, as in QAMP 2026)
 
   Stage 2 — Tail summary encoding (qubits n_backbone … n_backbone+n_tail-1):
-      Two modes:
+      Modes:
+        "global" (recommended): q10 = chemistry/composition summary,
+                                 q11 = topology/interface summary.
         "sum"   (original):  Ry = (α/2) · Σ χ(tail atoms, alternating)
         "stats" (improved):  qubit_tail0 = mean(property), qubit_tail1 = std(property)
         "pharm" (BBB-aware): qubit_tail0 = H-bond donors, qubit_tail1 = H-bond acceptors
@@ -34,6 +36,7 @@ from qiskit import QuantumCircuit
 
 from .atom_selection import QubitAssignment
 from .properties import get_atom_properties, PAULING_EN
+from .tail_summaries import summarize_tail
 
 ALPHA_DEFAULT = 0.1   # Same as original QAMP 2026
 
@@ -42,7 +45,7 @@ def build_circuit(
     assignment: QubitAssignment,
     alpha: float = ALPHA_DEFAULT,
     prop: str = "pauling_en",
-    tail_mode: str = "sum",
+    tail_mode: str = "global",
 ) -> QuantumCircuit:
     """
     Build a QuantumCircuit from a QubitAssignment.
@@ -56,13 +59,16 @@ def build_circuit(
                                   "crippen_logp", "tpsa_contrib", "combined_bbb",
                                   or "composite_pharmacophore".
     tail_mode  : str              How to encode tail atoms into tail qubits.
-                                  One of: "sum" (original), "stats", "pharm".
+                                  One of: "global" (recommended), "sum" (legacy),
+                                  "stats", "pharm".
 
     Returns
     -------
     qc : QuantumCircuit           Ready to transpile and run on hardware or simulator.
     """
     n_total = assignment.n_backbone + assignment.n_tail
+    if tail_mode == "global" and assignment.n_tail != 2:
+        raise ValueError("tail_mode='global' requires exactly two tail qubits")
     qc      = QuantumCircuit(n_total)
 
     mol              = assignment.mol
@@ -95,7 +101,7 @@ def build_circuit(
     # ------------------------------------------------------------------
     # Stage 3: Topological entanglement (Rxx gates)
     # ------------------------------------------------------------------
-    _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone)
+    _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone, tail_mode)
 
     qc.measure_all()
     return qc
@@ -114,7 +120,19 @@ def _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbon
 
     vals = [atom_props.get(i, 0.0) for i in tail_indices]
 
-    if mode == "sum":
+    if mode == "global":
+        tail_set = set(tail_indices)
+        backbone_indices = [
+            atom.GetIdx() for atom in mol.GetAtoms()
+            if atom.GetAtomicNum() > 1 and atom.GetIdx() not in tail_set
+        ]
+        summary = summarize_tail(mol, backbone_indices)
+        if n_tail >= 1:
+            qc.ry(summary.chemical_angle, tail_qubit_base)
+        if n_tail >= 2:
+            qc.ry(summary.structural_angle, tail_qubit_base + 1)
+
+    elif mode == "sum":
         # Original QAMP 2026 encoding: alternate even/odd indices
         tail_A = tail_indices[0::2]
         tail_B = tail_indices[1::2]
@@ -152,8 +170,6 @@ def _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbon
 
     elif mode == "pharm":
         # BBB-aware: H-bond donors and acceptors in the tail
-        from rdkit.Chem import rdMolDescriptors
-        factory = _get_pharm_factory()
         hbd_count = 0
         hba_count = 0
         for idx in tail_indices:
@@ -175,19 +191,16 @@ def _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbon
             qc.ry(angle_acceptor, tail_qubit_base + 1)
 
     else:
-        raise ValueError(f"Unknown tail_mode: '{mode}'. Use 'sum', 'stats', or 'pharm'.")
-
-
-def _get_pharm_factory():
-    """Lazy import to avoid loading rdkit.Chem.ChemicalFeatures at module level."""
-    return None  # simplified version above doesn't need the factory
+        raise ValueError(
+            f"Unknown tail_mode: '{mode}'. Use 'global', 'sum', 'stats', or 'pharm'."
+        )
 
 
 # ---------------------------------------------------------------------------
 # Internal: entanglement encoding
 # ---------------------------------------------------------------------------
 
-def _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone):
+def _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone, tail_mode="sum"):
     """
     Apply Rxx(φᵢⱼ) for each bond in the molecule.
 
@@ -196,9 +209,10 @@ def _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone):
       - backbone–tail     : Rxx between backbone qubit and the CORRECT tail qubit
                             (tail_A atoms → qubit n_backbone,
                              tail_B atoms → qubit n_backbone+1)
-                            FIX vs. original: original coupled to BOTH tail qubits.
-      - tail–tail         : dropped (not representable in fixed-width circuit).
-                            Noted in metadata for the collision/loss analysis.
+                            Global mode sends all interface bonds to q11;
+                            legacy modes use the alternating partition.
+      - tail–tail         : summarized in the global q11 feature angle, not
+                            individually entangled.
     """
     tail_set  = set(tail_indices)
     tail_A    = set(tail_indices[0::2])  # → qubit n_backbone
@@ -217,13 +231,17 @@ def _encode_entanglement(qc, mol, atom_to_qubit, tail_indices, n_backbone):
             qc.rxx(phi_ij, q1, q2)
 
         elif q1 is not None and idx2 in tail_set:
-            # backbone–tail bond: couple to the correct tail qubit
-            tail_q = n_backbone if idx2 in tail_A else n_backbone + 1
+            # Global mode reserves q11 for tail topology/interface bonds.
+            # Legacy modes keep the prior alternating partition.
+            tail_q = n_backbone + 1 if tail_mode == "global" else (
+                n_backbone if idx2 in tail_A else n_backbone + 1
+            )
             qc.rxx(phi_ij, q1, tail_q)
 
         elif q2 is not None and idx1 in tail_set:
-            # backbone–tail bond (reversed)
-            tail_q = n_backbone if idx1 in tail_A else n_backbone + 1
+            tail_q = n_backbone + 1 if tail_mode == "global" else (
+                n_backbone if idx1 in tail_A else n_backbone + 1
+            )
             qc.rxx(phi_ij, q2, tail_q)
 
         # else: tail–tail bond → silently dropped (limitation, documented)

@@ -31,6 +31,7 @@ from rdkit import Chem
 
 from .atom_selection import Strategy, assign_qubits
 from .properties import get_atom_properties
+from .tail_summaries import summarize_tail
 
 ALPHA_DEFAULT = 0.1
 
@@ -55,11 +56,12 @@ class CircuitFingerprint:
 
 def compute_fingerprint(
     smiles: str,
-    strategy: Strategy = Strategy.SCAFFOLD_CENTRALITY,
+    strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
     prop: str = "pauling_en",
     alpha: float = ALPHA_DEFAULT,
     n_backbone: int = 10,
     n_tail: int = 2,
+    tail_mode: str = "global",
 ) -> CircuitFingerprint | None:
     """
     Compute the circuit fingerprint for a single molecule.
@@ -80,8 +82,14 @@ def compute_fingerprint(
         val = atom_props.get(atom_idx, 0.0)
         ry[qubit] = alpha * (val ** 2) if prop == "pauling_en" else val
 
-    # --- Tail angles (simplified sum mode for fingerprint) ---
-    if tail_indices:
+    # --- Tail angles ---
+    if tail_indices and tail_mode == "global":
+        if n_tail != 2:
+            raise ValueError("tail_mode='global' requires exactly two tail qubits")
+        summary = summarize_tail(mol, assignment.backbone_indices)
+        ry[n_backbone] = summary.chemical_angle
+        ry[n_backbone + 1] = summary.structural_angle
+    elif tail_indices and tail_mode == "sum":
         tail_A = tail_indices[0::2]
         tail_B = tail_indices[1::2]
         if tail_A:
@@ -92,6 +100,8 @@ def compute_fingerprint(
             vals = [atom_props.get(i, 0.0) for i in tail_B]
             ry[n_backbone + 1] = (alpha / 2) * sum(vals) if prop == "pauling_en" \
                                  else float(np.mean(vals))
+    elif tail_indices:
+        raise ValueError("tail_mode must be 'global' or 'sum'")
 
     # --- Rxx edges ---
     tail_set = set(tail_indices)
@@ -105,10 +115,14 @@ def compute_fingerprint(
         if q1 is not None and q2 is not None:
             rxx_edges.append((min(q1, q2), max(q1, q2), phi))
         elif q1 is not None and i2 in tail_set:
-            tq = n_backbone if i2 in tail_A_s else n_backbone + 1
+            tq = n_backbone + 1 if tail_mode == "global" else (
+                n_backbone if i2 in tail_A_s else n_backbone + 1
+            )
             rxx_edges.append((min(q1, tq), max(q1, tq), phi))
         elif q2 is not None and i1 in tail_set:
-            tq = n_backbone if i1 in tail_A_s else n_backbone + 1
+            tq = n_backbone + 1 if tail_mode == "global" else (
+                n_backbone if i1 in tail_A_s else n_backbone + 1
+            )
             rxx_edges.append((min(q2, tq), max(q2, tq), phi))
 
     rxx_edges.sort()
@@ -129,9 +143,10 @@ def compute_fingerprint(
 def run_collision_analysis(
     smiles_list: List[str],
     labels: List[int] | None = None,
-    strategy: Strategy = Strategy.SCAFFOLD_CENTRALITY,
+    strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
     prop: str = "pauling_en",
     epsilon: float = 1e-3,
+    tail_mode: str = "global",
 ) -> pd.DataFrame:
     """
     Run collision analysis on a list of SMILES.
@@ -145,6 +160,7 @@ def run_collision_analysis(
     strategy    : atom ordering strategy to use
     prop        : atomic property
     epsilon     : L2 distance threshold for "near collision"
+    tail_mode   : tail representation used by the circuit fingerprint
 
     Returns
     -------
@@ -157,7 +173,7 @@ def run_collision_analysis(
     valid_labels = []
 
     for i, s in enumerate(smiles_list):
-        fp = compute_fingerprint(s, strategy=strategy, prop=prop)
+        fp = compute_fingerprint(s, strategy=strategy, prop=prop, tail_mode=tail_mode)
         if fp is not None:
             fps.append(fp)
             valid_smiles.append(s)

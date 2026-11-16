@@ -17,7 +17,7 @@ from .atom_selection import Strategy, assign_qubits
 
 def backbone_retention_profile(
     smiles: str,
-    strategy: Strategy = Strategy.CANONICAL_RANK,
+    strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
     backbone_sizes: Iterable[int] = (6, 8, 10, 12),
 ) -> pd.DataFrame:
     """Return one structural-retention row per requested backbone size.
@@ -64,7 +64,7 @@ def backbone_retention_profile(
 
 def dataset_backbone_summary(
     smiles_list: Iterable[str],
-    strategy: Strategy = Strategy.CANONICAL_RANK,
+    strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
     backbone_sizes: Iterable[int] = (6, 8, 10, 12),
 ) -> pd.DataFrame:
     """Average capacity-loss metrics across a dataset for each backbone size."""
