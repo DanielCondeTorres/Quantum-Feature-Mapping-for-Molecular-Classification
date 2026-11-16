@@ -19,6 +19,7 @@ from functools import lru_cache
 from math import sqrt
 from typing import Mapping
 
+import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
@@ -56,6 +57,9 @@ def select_backbone_atoms(
     mol: Chem.Mol,
     n_backbone: int = 10,
     centrality: Mapping[int, float] | None = None,
+    *,
+    physicochemical_coverage: bool = False,
+    distance_diversity: bool = False,
 ) -> BackboneSelection:
     """Select atoms by marginal chemical-environment coverage.
 
@@ -100,6 +104,13 @@ def select_backbone_atoms(
     ranks = list(Chem.CanonicalRankAtoms(mol, breakTies=True))
     roles = atom_role_tokens(mol)
     environments = _morgan_environment_tokens(mol)
+    # Add coarse, fixed-boundary physicochemical tokens to Morgan/role coverage.
+    # This encourages the ten wires to retain atoms with distinct polarity,
+    # charge, and lipophilicity rather than spending the whole budget on
+    # repeated carbon environments. These bins are structural priors, not
+    # fitted to BBBP labels.
+    if physicochemical_coverage:
+        environments = _add_physchem_tokens(mol, environments)
 
     frequencies = Counter(
         token for atom_idx in heavy_atoms for token in environments[atom_idx]
@@ -109,8 +120,10 @@ def select_backbone_atoms(
         if token.startswith("morgan:"):
             # Diminishing value for common/repeated local environments.
             token_weights[token] = 1.0 / sqrt(frequencies[token])
-        else:
+        elif token.startswith("role:"):
             token_weights[token] = _ROLE_WEIGHTS[token.split(":", 1)[1]]
+        else:
+            token_weights[token] = 0.6
 
     max_centrality = max((centrality or {}).values(), default=0.0)
     if max_centrality <= 0:
@@ -149,11 +162,21 @@ def select_backbone_atoms(
             degree = max(1, mol.GetAtomWithIdx(atom_idx).GetDegree())
             connectivity_value = neighbors_selected / degree
 
-            score = (
-                coverage_gain
-                + _CENTRALITY_WEIGHT * centrality_value
-                + _CONNECTIVITY_WEIGHT * connectivity_value
-            )
+            if distance_diversity and selected_set:
+                distances = [
+                    nx_distance(mol, atom_idx, selected_idx)
+                    for selected_idx in selected_set
+                ]
+                distance_novelty = min(min(distances), 4) / 4.0
+            elif distance_diversity:
+                distance_novelty = 1.0
+            if distance_diversity:
+                score = (coverage_gain + _CENTRALITY_WEIGHT * centrality_value
+                         + 0.10 * connectivity_value + 0.20 * distance_novelty)
+            else:
+                # Preserve the established selector as the unchanged default.
+                score = (coverage_gain + _CENTRALITY_WEIGHT * centrality_value
+                         + _CONNECTIVITY_WEIGHT * connectivity_value)
             # Exact deterministic tie-break; canonical ranks do not contribute
             # to the score and therefore are not mistaken for importance.
             if score > best_score or (
@@ -239,6 +262,52 @@ def _morgan_environment_tokens(mol: Chem.Mol) -> dict[int, set[str]]:
         if atom.GetAtomicNum() > 1:
             result[atom.GetIdx()]  # ensure a set exists, even for unusual atoms
     return dict(result)
+
+
+def _add_physchem_tokens(mol: Chem.Mol, environments: dict[int, set[str]]):
+    """Augment atom environments with interpretable, fixed-scale features."""
+    from rdkit.Chem import AllChem, Crippen, rdMolDescriptors
+
+    rw = Chem.RWMol(mol)
+    AllChem.ComputeGasteigerCharges(rw)
+    charges = []
+    for atom in rw.GetAtoms():
+        try:
+            value = float(atom.GetDoubleProp("_GasteigerCharge"))
+        except (KeyError, ValueError):
+            value = 0.0
+        charges.append(value if np.isfinite(value) else 0.0)
+    tpsa = rdMolDescriptors._CalcTPSAContribs(mol)
+    logp = Crippen.rdMolDescriptors._CalcCrippenContribs(mol)
+    result = {idx: set(tokens) for idx, tokens in environments.items()}
+    for atom in mol.GetAtoms():
+        idx = atom.GetIdx()
+        if atom.GetAtomicNum() <= 1:
+            continue
+        # Quantized bins avoid over-weighting tiny descriptor differences.
+        result[idx].add(f"tpsa_bin:{min(int(max(tpsa[idx], 0) // 10), 4)}")
+        result[idx].add(f"logp_bin:{int(np.clip(np.floor(logp[idx][0] + 2), 0, 4))}")
+        result[idx].add(f"charge_bin:{int(np.clip(np.floor(charges[idx] + 1.5), 0, 2))}")
+        result[idx].add(f"degree_bin:{min(atom.GetDegree(), 4)}")
+    return result
+
+
+def nx_distance(mol: Chem.Mol, left: int, right: int) -> int:
+    """Small unweighted shortest-path distance, capped by caller."""
+    from collections import deque
+
+    queue = deque([(left, 0)])
+    visited = {left}
+    while queue:
+        current, distance = queue.popleft()
+        if current == right:
+            return distance
+        for neighbor in mol.GetAtomWithIdx(current).GetNeighbors():
+            idx = neighbor.GetIdx()
+            if neighbor.GetAtomicNum() > 1 and idx not in visited:
+                visited.add(idx)
+                queue.append((idx, distance + 1))
+    return 99
 
 
 def _all_tokens(roles, environments, atom_indices):

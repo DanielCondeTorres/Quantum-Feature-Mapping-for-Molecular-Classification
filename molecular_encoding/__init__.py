@@ -3,8 +3,9 @@ molecular_encoding
 ==================
 Molecular representation module for QAMP 2027.
 
-Implements chemistry-aware atom selection and global tail summaries for the
-10+2 quantum feature map. ``encode_molecule`` defaults to both new policies.
+Provides chemistry-aware atom selection and global tail summaries for the
+10+2 quantum feature map. The default remains ``CHEMICAL_COVERAGE`` with a
+global two-qubit tail; experimental encodings are explicitly opt-in.
 """
 
 from .atom_selection import assign_qubits, Strategy

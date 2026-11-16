@@ -57,6 +57,7 @@ class Strategy(enum.Enum):
     SCAFFOLD_CENTRALITY  = "scaffold_centrality"   # Murcko scaffold first, then betweenness
     RANDOM               = "random"                # Negative control (shuffled)
     CHEMICAL_COVERAGE    = "chemical_coverage"     # Morgan environments + chemical roles
+    PHYSICOCHEMICAL_COVERAGE = "physicochemical_coverage" # diverse Morgan + physchem
 
 
 @dataclass
@@ -164,6 +165,18 @@ def assign_qubits(
 
     elif strategy == Strategy.CHEMICAL_COVERAGE:
         selection = select_backbone_atoms(mol, n_backbone, centrality)
+        ordered = list(selection.selected_atoms + selection.tail_atoms)
+        selection_metadata = {
+            "selection_scores": dict(selection.scores),
+            "selection_reasons": dict(selection.reasons),
+        }
+
+    elif strategy == Strategy.PHYSICOCHEMICAL_COVERAGE:
+        selection = select_backbone_atoms(
+            mol, n_backbone, centrality,
+            physicochemical_coverage=True,
+            distance_diversity=True,
+        )
         ordered = list(selection.selected_atoms + selection.tail_atoms)
         selection_metadata = {
             "selection_scores": dict(selection.scores),

@@ -57,6 +57,32 @@ def _apply_rxx(state: np.ndarray, theta: float, q1: int, q2: int) -> None:
     state[:] = np.cos(theta / 2.0) * state - 1j * np.sin(theta / 2.0) * state[partner]
 
 
+def _apply_single_axis(state: np.ndarray, theta: float, qubit: int, axis: str) -> None:
+    indices = np.arange(state.size)
+    zero = indices[(indices & (1 << qubit)) == 0]
+    one = zero | (1 << qubit)
+    if axis == "rz":
+        state[zero] *= np.exp(-0.5j * theta)
+        state[one] *= np.exp(0.5j * theta)
+        return
+    a0, a1 = state[zero].copy(), state[one].copy()
+    cosine, sine = np.cos(theta / 2.0), np.sin(theta / 2.0)
+    if axis == "rx":
+        state[zero] = cosine * a0 - 1j * sine * a1
+        state[one] = -1j * sine * a0 + cosine * a1
+    else:
+        state[zero] = cosine * a0 - sine * a1
+        state[one] = sine * a0 + cosine * a1
+
+
+def _apply_rzz(state: np.ndarray, theta: float, q1: int, q2: int) -> None:
+    indices = np.arange(state.size)
+    bit1 = (indices >> q1) & 1
+    bit2 = (indices >> q2) & 1
+    parity = 1 - 2 * (bit1 ^ bit2)
+    state *= np.exp(-0.5j * theta * parity)
+
+
 def statevector_probabilities(
     smiles: str,
     strategy: Strategy,
@@ -77,6 +103,18 @@ def statevector_probabilities(
 
     state = np.zeros(1 << N_QUBITS, dtype=np.complex128)
     state[0] = 1.0
+    if prop == "multi_physchem":
+        from molecular_encoding.multifeature import multifeature_gate_operations
+        for operation in multifeature_gate_operations(assignment):
+            name, angle, q1, *other = operation
+            if name in {"rx", "ry", "rz"}:
+                _apply_single_axis(state, angle, q1, name)
+            elif name == "rxx":
+                _apply_rxx(state, angle, q1, other[0])
+            elif name == "rzz":
+                _apply_rzz(state, angle, q1, other[0])
+        probabilities = np.abs(state) ** 2
+        return probabilities / probabilities.sum()
     atom_properties = get_atom_properties(assignment, prop=prop)
 
     for qubit, atom_idx in enumerate(assignment.backbone_indices):

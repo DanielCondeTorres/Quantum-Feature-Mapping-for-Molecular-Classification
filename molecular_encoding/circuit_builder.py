@@ -55,7 +55,7 @@ def build_circuit(
     assignment : QubitAssignment  Output of atom_selection.assign_qubits().
     alpha      : float            Scaling factor for Ry angles (default 0.1).
     prop       : str              Atomic property to use for Ry angles.
-                                  One of: "pauling_en", "gasteiger_charge",
+                                  One of: "pauling_en", "multi_physchem", "gasteiger_charge",
                                   "crippen_logp", "tpsa_contrib", "combined_bbb",
                                   or "composite_pharmacophore".
     tail_mode  : str              How to encode tail atoms into tail qubits.
@@ -70,6 +70,14 @@ def build_circuit(
     if tail_mode == "global" and assignment.n_tail != 2:
         raise ValueError("tail_mode='global' requires exactly two tail qubits")
     qc      = QuantumCircuit(n_total)
+
+    if prop == "multi_physchem":
+        from .multifeature import multifeature_gate_operations
+        for operation in multifeature_gate_operations(assignment):
+            name, angle, q1, *other = operation
+            getattr(qc, name)(angle, q1, *other)
+        qc.measure_all()
+        return qc
 
     mol              = assignment.mol
     backbone_indices = assignment.backbone_indices

@@ -231,6 +231,50 @@ with NumPy because Qiskit was unavailable, so this prototype has not been
 validated against Qiskit's simulator or hardware. The graph feature-map
 references motivate the design but do not predict its performance on BBBP.
 
+#### Multi-feature upload and optional physicochemical selector
+
+The default `CHEMICAL_COVERAGE` selector remains unchanged: it greedily covers
+distinct Morgan environments and chemical roles. The opt-in
+`PHYSICOCHEMICAL_COVERAGE` adds coarse, fixed-scale atomwise bins for TPSA,
+Crippen logP contribution, Gasteiger charge and degree, plus graph-distance
+diversity. It is label-free and SMILES-invariant; it does not use BBBP labels.
+
+The opt-in circuit property `multi_physchem` keeps Pauling electronegativity
+but no longer asks one `Ry` angle to carry all atom chemistry. It uploads
+Pauling polarity, signed Gasteiger charge and TPSA with `RY/RZ/RX`, applies
+bond-order and aromatic/conjugated/ring interactions, then re-uploads local
+Crippen lipophilicity, donor-minus-acceptor role and aromaticity on different
+axes. The two tail wires retain the global chemistry/topology summaries and
+the graph-boundary connection. Call it with
+`encode_molecule(smiles, strategy=Strategy.CHEMICAL_COVERAGE,
+prop="multi_physchem")`; the newer selector can be compared by substituting
+`Strategy.PHYSICOCHEMICAL_COVERAGE`.
+
+The controlled comparison (`python run_multifeature_comparison.py`) uses the
+same balanced 250-molecule BBBP sample, ten stratified 75/25 splits, exact
+NumPy statevector probabilities, StandardScaler + RBF-SVC, and a second
+leakage-safe run that selects C inside each training fold:
+
+| Representation | Accuracy, fixed C=10 | ROC-AUC, fixed C=10 | Accuracy, nested C | ROC-AUC, nested C |
+|---|---:|---:|---:|---:|
+| SMILES order + Pauling | 0.781 ± 0.053 | 0.844 ± 0.043 | 0.781 ± 0.034 | 0.873 ± 0.038 |
+| Existing chemical coverage + Pauling | 0.678 ± 0.053 | 0.730 ± 0.053 | 0.673 ± 0.064 | 0.733 ± 0.060 |
+| Existing chemical coverage + TPSA | **0.706 ± 0.058** | 0.727 ± 0.063 | **0.703 ± 0.061** | 0.750 ± 0.076 |
+| Existing chemical coverage + multi-feature | 0.576 ± 0.046 | 0.632 ± 0.060 | 0.606 ± 0.066 | 0.649 ± 0.065 |
+| New physicochemical coverage + Pauling | 0.637 ± 0.038 | 0.679 ± 0.050 | 0.635 ± 0.076 | 0.715 ± 0.052 |
+| New physicochemical coverage + multi-feature | 0.548 ± 0.031 | 0.603 ± 0.051 | 0.549 ± 0.046 | 0.591 ± 0.055 |
+
+This is a useful negative result: the richer multi-feature map and the new
+selector did **not** beat the simpler chemistry baseline on this small BBBP
+sample. The best tested chemistry arm remains the already-implemented TPSA
+contribution (mean accuracy 0.706), while the traversal-dependent SMILES arm
+is still higher. Therefore these additions are opt-in experiments, not a
+claim that chemical invariance has already improved predictive performance.
+More axes increase circuit complexity and may dilute useful signals; larger
+scaffold splits, descriptor ablations, and a readout-aware model are needed
+before making a general claim. Results/settings are saved in
+`multifeature_comparison_*.csv/json`.
+
 Reproduce with `python run_graph_pooling_comparison.py`. The script also
 checks four alternate SMILES traversals for each of the 250 molecules (1,000
 checks total); all produced identical canonical pooled gate sequences. The
@@ -283,6 +327,7 @@ molecular_encoding/
 ├── tail_summaries.py     # Bounded chemistry and structure summaries for the tail
 ├── properties.py         # Property extractors (Pauling EN, Crippen LogP, Gasteiger)
 ├── circuit_builder.py    # QuantumCircuit construction with uncoupled tail fix
+├── multifeature.py       # Opt-in Pauli-axis re-upload of complementary chemistry
 ├── collision_analysis.py # Fingerprinting & collision detection across datasets
 ├── capacity_analysis.py  # Quantifies loss from the fixed ten-atom backbone
 ├── graph_pooling.py      # Experimental connected-fragment 10+2 feature map
@@ -290,8 +335,12 @@ molecular_encoding/
 ├── composite_descriptor.py # BBB-oriented composite pharmacophore angle
 └── tests/
     ├── test_atom_selection.py
-    └── test_graph_pooling.py
+    ├── test_graph_pooling.py
+    └── test_multifeature.py
 ```
+
+`run_multifeature_comparison.py` reproduces the paired selector/property
+comparison and writes its fold metrics and settings to `molecular_encoding/`.
 
 The root-level `run_graph_pooling_comparison.py` reproduces the controlled
 baseline comparison and writes split-level metrics and settings alongside
