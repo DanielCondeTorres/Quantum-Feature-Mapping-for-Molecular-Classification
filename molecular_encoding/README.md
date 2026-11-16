@@ -627,12 +627,24 @@ descriptive and not a significance test.
 | `pauling_en` / `stats` | 0.575 ± 0.053 | 0.581 ± 0.059 | 0.628 ± 0.057 |
 | `pauling_en` / `pharm` | 0.592 ± 0.042 | 0.576 ± 0.041 | 0.643 ± 0.046 |
 
-`tpsa_contrib` has the best mean accuracy and F1 in this sweep, but improves
-accuracy by only 0.029 over the default, wins on 6/10 paired splits, and does
-not improve mean ROC-AUC. No tested option approaches the previously measured
-source-SMILES-order baseline (0.781 accuracy / 0.844 ROC-AUC); this sweep
-therefore identifies a promising feature ablation, not a validated overall
-improvement. Results and settings are in `embedding_ablation_*.csv/json` and
-can be reproduced with `python run_embedding_ablation.py`. Exact NumPy
-statevector evolution was used because Qiskit was unavailable in the run
-environment.
+**Direct answer: TPSA beats Pauling electronegativity on some BBBP metrics in
+these tests, but not on every metric or protocol.** In the matched 10-split,
+fixed-$C=10$ ablation above, TPSA improves mean accuracy from 0.678 to 0.706
+(+0.029) and F1 from 0.657 to 0.678 (+0.021), but mean ROC-AUC is very slightly
+lower (0.727 vs 0.730). It wins accuracy on 6/10 paired splits. With $C$
+selected inside each training fold, TPSA is higher on accuracy (0.703 vs
+0.673), F1 (0.674 vs 0.654), and ROC-AUC (0.750 vs 0.733).
+
+On the separate scaffold-held-out test, TPSA is again higher on accuracy
+(0.731 vs 0.717) and ROC-AUC (0.771 vs 0.752), while Pauling has slightly
+higher F1 (0.706 vs 0.695). Thus, **TPSA is the stronger tested choice for
+accuracy and ranking (AUC) under the chemistry-based selector, but we cannot
+claim it universally beats Pauling**: metric and validation protocol matter,
+and the uncertainty intervals overlap. Neither feature beats the source-SMILES
+control in the earlier random-split comparison, and the order-based control is
+not traversal-invariant. Keep Pauling as the backward-compatible default;
+TPSA is an opt-in, promising BBBP ablation, not a proven general improvement.
+
+Results and settings are in `embedding_ablation_*.csv/json` and can be
+reproduced with `python run_embedding_ablation.py`. Exact NumPy statevector
+evolution was used because Qiskit was unavailable in the run environment.
