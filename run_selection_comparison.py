@@ -57,13 +57,17 @@ def _apply_rxx(state: np.ndarray, theta: float, q1: int, q2: int) -> None:
     state[:] = np.cos(theta / 2.0) * state - 1j * np.sin(theta / 2.0) * state[partner]
 
 
-def statevector_probabilities(smiles: str, strategy: Strategy) -> np.ndarray:
+def statevector_probabilities(
+    smiles: str,
+    strategy: Strategy,
+    prop: str = "pauling_en",
+    tail_mode: str = "global",
+) -> np.ndarray:
     """Build and exactly simulate the shared 10+2 feature map for one SMILES.
 
     ``SMILES_ORDER`` retains RDKit's atom traversal from the source string.
     ``CHEMICAL_COVERAGE`` canonicalizes internally before selecting atoms.
-    All other circuit choices, including the global two-channel tail, are
-    identical between the two arms.
+    ``prop`` and ``tail_mode`` mirror the existing molecular_encoding options.
     """
     assignment = assign_qubits(
         smiles, strategy=strategy, n_backbone=N_BACKBONE, n_tail=N_TAIL
@@ -73,16 +77,42 @@ def statevector_probabilities(smiles: str, strategy: Strategy) -> np.ndarray:
 
     state = np.zeros(1 << N_QUBITS, dtype=np.complex128)
     state[0] = 1.0
-    atom_properties = get_atom_properties(assignment, prop="pauling_en")
+    atom_properties = get_atom_properties(assignment, prop=prop)
 
     for qubit, atom_idx in enumerate(assignment.backbone_indices):
-        en = atom_properties[atom_idx]
-        _apply_ry(state, ALPHA * en**2, qubit)
+        value = atom_properties[atom_idx]
+        angle = ALPHA * value**2 if prop == "pauling_en" else value
+        _apply_ry(state, angle, qubit)
 
-    if assignment.tail_indices:
+    if assignment.tail_indices and tail_mode == "global":
         tail = summarize_tail(assignment.mol, assignment.backbone_indices)
         _apply_ry(state, tail.chemical_angle, N_BACKBONE)
         _apply_ry(state, tail.structural_angle, N_BACKBONE + 1)
+    elif assignment.tail_indices and tail_mode == "sum":
+        for indices, qubit in ((assignment.tail_indices[0::2], N_BACKBONE),
+                               (assignment.tail_indices[1::2], N_BACKBONE + 1)):
+            values = [atom_properties.get(idx, 0.0) for idx in indices]
+            if values:
+                angle = (ALPHA / 2.0) * sum(values) if prop == "pauling_en" else float(np.mean(values))
+                _apply_ry(state, angle, qubit)
+    elif assignment.tail_indices and tail_mode == "stats":
+        values = np.asarray([atom_properties.get(idx, 0.0) for idx in assignment.tail_indices])
+        _apply_ry(state, float(values.mean()), N_BACKBONE)
+        _apply_ry(state, min(float(values.std()), np.pi / 2.0), N_BACKBONE + 1)
+    elif assignment.tail_indices and tail_mode == "pharm":
+        donor_count = 0
+        acceptor_count = 0
+        for idx in assignment.tail_indices:
+            atom = assignment.mol.GetAtomWithIdx(idx)
+            symbol = atom.GetSymbol()
+            if symbol in ("N", "O") and atom.GetTotalNumHs() > 0:
+                donor_count += 1
+            if symbol in ("N", "O", "F"):
+                acceptor_count += 1
+        _apply_ry(state, min(donor_count / 10.0, 1.0) * np.pi, N_BACKBONE)
+        _apply_ry(state, min(acceptor_count / 10.0, 1.0) * np.pi, N_BACKBONE + 1)
+    elif tail_mode not in {"global", "sum", "stats", "pharm"}:
+        raise ValueError(f"Unknown tail mode: {tail_mode}")
 
     for bond in assignment.mol.GetBonds():
         left, right = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
@@ -92,9 +122,15 @@ def statevector_probabilities(smiles: str, strategy: Strategy) -> np.ndarray:
         if q_left is not None and q_right is not None:
             _apply_rxx(state, theta, q_left, q_right)
         elif q_left is not None and right in assignment.tail_indices:
-            _apply_rxx(state, theta, q_left, N_BACKBONE + 1)
+            tail_qubit = N_BACKBONE + 1 if tail_mode == "global" else (
+                N_BACKBONE if assignment.tail_indices.index(right) % 2 == 0 else N_BACKBONE + 1
+            )
+            _apply_rxx(state, theta, q_left, tail_qubit)
         elif q_right is not None and left in assignment.tail_indices:
-            _apply_rxx(state, theta, q_right, N_BACKBONE + 1)
+            tail_qubit = N_BACKBONE + 1 if tail_mode == "global" else (
+                N_BACKBONE if assignment.tail_indices.index(left) % 2 == 0 else N_BACKBONE + 1
+            )
+            _apply_rxx(state, theta, q_right, tail_qubit)
 
     probabilities = np.abs(state) ** 2
     return probabilities / probabilities.sum()

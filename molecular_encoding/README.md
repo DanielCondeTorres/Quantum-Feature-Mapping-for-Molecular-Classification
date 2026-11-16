@@ -221,3 +221,34 @@ benchmark result to this implementation.
 | **Quantum Pharmacophore-First** | **0.675 ± 0.119** | **0.736 ± 0.095** | **0.697 ± 0.115** | Prioritizes heteroatoms & H-bonding |
 | **Quantum Canonical Morgan Rank** 🚀 | **0.695 ± 0.079** | **0.760 ± 0.093** | **0.725 ± 0.072** | **Massive leap (+12.5% Acc, +14.7% AUC)** |
 | Negative Control (Random atom assignment) | 0.575 ± 0.060 | 0.559 ± 0.112 | 0.543 ± 0.106 | Topology scrambled (drops to random baseline) |
+
+### 3.1 Ablation of implemented atomic properties and tail modes
+
+The following controlled experiment holds `CHEMICAL_COVERAGE`, the balanced
+250-molecule sample, ten 75/25 stratified splits, `StandardScaler`, and an RBF
+SVC (`C=10`) fixed. It tests each implemented atom property with the `global`
+tail, then each other implemented tail mode with the default `pauling_en`
+property. Values are mean ± sample SD across splits; the experiment is
+descriptive and not a significance test.
+
+| Property / tail mode | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| `pauling_en` / `global` (default) | 0.678 ± 0.053 | 0.657 ± 0.063 | **0.730 ± 0.053** |
+| `gasteiger_charge` / `global` | 0.652 ± 0.080 | 0.606 ± 0.095 | 0.720 ± 0.086 |
+| `crippen_logp` / `global` | 0.597 ± 0.056 | 0.601 ± 0.044 | 0.636 ± 0.062 |
+| `tpsa_contrib` / `global` | **0.706 ± 0.058** | **0.678 ± 0.069** | 0.727 ± 0.063 |
+| `combined_bbb` / `global` | 0.616 ± 0.070 | 0.609 ± 0.071 | 0.649 ± 0.066 |
+| `composite_pharmacophore` / `global` | 0.689 ± 0.067 | 0.663 ± 0.078 | 0.729 ± 0.068 |
+| `pauling_en` / `sum` | 0.578 ± 0.049 | 0.581 ± 0.057 | 0.647 ± 0.048 |
+| `pauling_en` / `stats` | 0.575 ± 0.053 | 0.581 ± 0.059 | 0.628 ± 0.057 |
+| `pauling_en` / `pharm` | 0.592 ± 0.042 | 0.576 ± 0.041 | 0.643 ± 0.046 |
+
+`tpsa_contrib` has the best mean accuracy and F1 in this sweep, but improves
+accuracy by only 0.029 over the default, wins on 6/10 paired splits, and does
+not improve mean ROC-AUC. No tested option approaches the previously measured
+source-SMILES-order baseline (0.781 accuracy / 0.844 ROC-AUC); this sweep
+therefore identifies a promising feature ablation, not a validated overall
+improvement. Results and settings are in `embedding_ablation_*.csv/json` and
+can be reproduced with `python run_embedding_ablation.py`. Exact NumPy
+statevector evolution was used because Qiskit was unavailable in the run
+environment.
