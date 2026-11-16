@@ -350,6 +350,56 @@ scaffold-based validation are needed for a broad performance claim.
 
 #### Multi-feature upload and optional physicochemical selector
 
+##### ¿Tiene sentido combinar propiedades con PCA?
+
+Sí, pero hay que distinguir dos operaciones que a menudo se confunden. En la
+codificación multifeature existente no se hace PCA: las propiedades se
+normalizan con escalas químicas fijadas de antemano y se suben por separado a
+distintos ejes de rotación. Esto conserva la interpretación de cada canal. El
+PCA, en cambio, es una proyección estadística aprendida de una colección de
+moléculas y sus componentes no son propiedades químicas con nombre propio.
+
+Para una matriz de descriptores moleculares $X\in\mathbb{R}^{n\times p}$,
+primero se estandariza cada columna usando exclusivamente el conjunto de
+entrenamiento:
+
+$$z_{ij}=\frac{x_{ij}-\mu_j^{(train)}}{\sigma_j^{(train)}}.$$
+
+Se diagonaliza la covarianza de $Z_{train}$,
+$C=Z_{train}^{\mathsf T}Z_{train}/(n_{train}-1)$, y se ordenan sus autovectores
+$v_k$ por autovalor descendente. El componente $k$ de una molécula nueva es
+$s_{ik}=z_i v_k$. Se podría usar PC1, o los primeros $K$ componentes que
+expliquen una fracción predefinida de varianza; esa decisión se toma dentro de
+la validación, nunca mirando el test externo. Si se lleva un score a una
+rotación, una opción acotada y reproducible es
+
+$$\theta_{ik}=\pi\,\operatorname{sigmoid}(s_{ik}/\tau),\qquad
+\operatorname{sigmoid}(u)=\frac{1}{1+e^{-u}},$$
+
+donde $\tau$ se fija usando solo entrenamiento. No conviene aplicar min–max
+por molécula: haría que la misma molécula cambiase de escala según sus
+compañeras y borraría diferencias absolutas. Tampoco se deben ajustar el
+escalador ni los autovectores con train+test: eso filtra información del test.
+
+Una comparación defendible debe incluir (i) cada descriptor por separado,
+(ii) la combinación directa por canales químicos ya disponible y (iii) PCA
+ajustado dentro de cada fold, con el mismo selector, circuito, clasificador y
+particiones. La elección entre propiedades o entre números de componentes es
+selección de hiperparámetros y requiere validación interna anidada. Deben
+publicarse media y dispersión entre folds, además de una evaluación agrupada
+por scaffold; no escoger la variante por el mejor resultado sobre los mismos
+folds y luego presentar ese resultado como una estimación imparcial.
+
+En este repositorio el PCA **no es todavía un modo de embedding implementado
+ni un resultado medido**. La opción `multi_physchem` existente es una subida
+directa, interpretable y sin PCA; en la comparación BBBP guardada rindió peor
+que TPSA. Por tanto, PCA queda como hipótesis experimental, no como mejora
+afirmada. Antes de integrarlo como modo estable hace falta implementar el
+transformador con ajuste por fold y compararlo con las ablaciones individuales
+bajo validación nested/scaffold. Así se evita que un PCA ajustado una sola vez
+al dataset completo dé métricas optimistas o que el nombre “combinado” oculte
+una decisión post-hoc.
+
 The default `CHEMICAL_COVERAGE` selector remains unchanged: it greedily covers
 distinct Morgan environments and chemical roles. The opt-in
 `PHYSICOCHEMICAL_COVERAGE` adds coarse, fixed-scale atomwise bins for TPSA,
