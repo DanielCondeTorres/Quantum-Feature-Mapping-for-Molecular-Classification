@@ -114,6 +114,15 @@ def assign_qubits(
     if mol is None:
         return None
 
+    # RDKit atom indices reflect the input traversal.  Reparse the canonical
+    # SMILES before every graph-based strategy so tie breaks cannot inherit a
+    # caller's arbitrary SMILES traversal.  SMILES_ORDER deliberately remains
+    # untouched: it is the representation-dependent negative baseline.
+    if strategy != Strategy.SMILES_ORDER:
+        canonical_smiles = Chem.MolToSmiles(mol, canonical=True)
+        mol = Chem.MolFromSmiles(canonical_smiles)
+        smiles = canonical_smiles
+
     n_atoms = mol.GetNumHeavyAtoms()
 
     # Build molecular graph (always, for visualization and centrality)
@@ -121,20 +130,20 @@ def assign_qubits(
 
     # Identify Murcko scaffold atoms (always, for SCAFFOLD strategy and metadata)
     scaffold_atom_set = _get_scaffold_atoms(mol)
+    ranks = list(Chem.CanonicalRankAtoms(mol))
 
     # --- Select backbone atom indices by strategy ---
     if strategy == Strategy.SMILES_ORDER:
         ordered = [atom.GetIdx() for atom in mol.GetAtoms()]
 
     elif strategy == Strategy.CANONICAL_RANK:
-        ranks = list(Chem.CanonicalRankAtoms(mol))
         ordered = sorted(range(n_atoms), key=lambda i: ranks[i])
 
     elif strategy == Strategy.PHARMACOPHORE_FIRST:
-        ordered = _pharmacophore_order(mol)
+        ordered = _pharmacophore_order(mol, ranks)
 
     elif strategy == Strategy.SCAFFOLD_CENTRALITY:
-        ordered = _scaffold_centrality_order(mol, scaffold_atom_set, centrality)
+        ordered = _scaffold_centrality_order(mol, scaffold_atom_set, centrality, ranks)
 
     elif strategy == Strategy.RANDOM:
         ordered = list(range(n_atoms))
@@ -221,7 +230,7 @@ def _get_scaffold_atoms(mol) -> set:
         return set()
 
 
-def _pharmacophore_order(mol) -> List[int]:
+def _pharmacophore_order(mol, canonical_ranks: List[int]) -> List[int]:
     """
     Order atoms by pharmacophoric relevance for membrane/BBB permeability:
       - Heteroatoms (N, O, S, P, halogens) get top priority (Lipinski polar groups)
@@ -236,13 +245,15 @@ def _pharmacophore_order(mol) -> List[int]:
         is_acceptor = 1 if sym in ("N", "O", "F") else 0
         degree = atom.GetDegree()
         score = is_hetero * 10 + is_donor * 5 + is_acceptor * 3 + degree * 1
-        scores.append((score, atom.GetIdx()))
+        scores.append((score, canonical_ranks[atom.GetIdx()], atom.GetIdx()))
 
-    scores.sort(key=lambda x: -x[0])
-    return [idx for _, idx in scores]
+    scores.sort(key=lambda x: (-x[0], x[1]))
+    return [idx for _, _, idx in scores]
 
 
-def _scaffold_centrality_order(mol, scaffold_atoms: set, centrality: dict) -> List[int]:
+def _scaffold_centrality_order(
+    mol, scaffold_atoms: set, centrality: dict, canonical_ranks: List[int]
+) -> List[int]:
     """
     Order atoms for SCAFFOLD_CENTRALITY strategy:
 
@@ -263,11 +274,11 @@ def _scaffold_centrality_order(mol, scaffold_atoms: set, centrality: dict) -> Li
     all_indices   = [atom.GetIdx() for atom in mol.GetAtoms()]
     scaffold_part = sorted(
         [i for i in all_indices if i in scaffold_atoms],
-        key=lambda i: -centrality.get(i, 0.0),
+        key=lambda i: (-centrality.get(i, 0.0), canonical_ranks[i]),
     )
     non_scaffold  = sorted(
         [i for i in all_indices if i not in scaffold_atoms],
-        key=lambda i: -centrality.get(i, 0.0),
+        key=lambda i: (-centrality.get(i, 0.0), canonical_ranks[i]),
     )
     return scaffold_part + non_scaffold
 

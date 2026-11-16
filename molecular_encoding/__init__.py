@@ -8,8 +8,9 @@ for the 10+2 quantum feature map (QuantumCircuit with N_BACKBONE + N_TAIL qubits
 """
 
 from .atom_selection import assign_qubits, Strategy
-from .circuit_builder import build_circuit
 from .preprocessing import preprocess_smiles
+from .composite_descriptor import compute_composite_bbb_angles
+from .capacity_analysis import backbone_retention_profile, dataset_backbone_summary
 
 def encode_molecule(smiles: str, strategy: "Strategy" = None, **kwargs):
     """
@@ -38,8 +39,19 @@ def encode_molecule(smiles: str, strategy: "Strategy" = None, **kwargs):
     if assignment is None:
         return None, None
 
+    # Keep the chemistry-only part of the package usable on machines where
+    # Qiskit is intentionally not installed (e.g. data-preparation workers).
+    from .circuit_builder import build_circuit
     qc = build_circuit(assignment, **kwargs)
     return qc, assignment
 
 
-__all__ = ["encode_molecule", "assign_qubits", "Strategy", "build_circuit", "preprocess_smiles"]
+def __getattr__(name):
+    """Lazily expose the optional Qiskit circuit builder."""
+    if name == "build_circuit":
+        from .circuit_builder import build_circuit
+        return build_circuit
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["encode_molecule", "assign_qubits", "Strategy", "build_circuit", "preprocess_smiles", "compute_composite_bbb_angles", "backbone_retention_profile", "dataset_backbone_summary"]

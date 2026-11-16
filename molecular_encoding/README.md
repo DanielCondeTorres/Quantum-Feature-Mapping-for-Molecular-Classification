@@ -27,7 +27,7 @@ In computer science and graph theory, this algorithm is mathematically equivalen
    The iterations continue until the number of distinct atom labels across the graph reaches a maximum (symmetry resolution). The atoms are sorted deterministically by their final converged labels.
 
 4. **Step 3 — Mapping to 10+2 Quantum Architecture:**
-   * **Backbone Qubits (`q0` – `q9`):** Receive the 10 atoms with the most topologically and chemically rich environments.
+   * **Backbone Qubits (`q0` – `q9`):** Receive the first 10 atoms in a deterministic canonical graph order. This is an ordering rule, not a learned measure of chemical importance; compare it against Pharmacophore-First experimentally.
    * **Tail Qubits (`q10`, `q11`):** Receive the remaining atoms compressed into statistical summaries.
 
 ![Canonical Morgan Rank Diagram](morgan_canonical_rank_diagram.png)
@@ -85,11 +85,36 @@ molecular_encoding/
 ├── properties.py         # Property extractors (Pauling EN, Crippen LogP, Gasteiger)
 ├── circuit_builder.py    # QuantumCircuit construction with uncoupled tail fix
 ├── collision_analysis.py # Fingerprinting & collision detection across datasets
+├── capacity_analysis.py  # Quantifies loss from the fixed ten-atom backbone
 ├── visualization.py      # Molecular graph and circuit heatmap plotting
 ├── morgan_canonical_rank_diagram.png # Explanatory graphic for 1-WL coloring
+├── composite_descriptor.py # BBB-oriented composite pharmacophore angle
 └── tests/
     └── test_atom_selection.py
 ```
+
+### Capacity and collision reporting
+
+The ten-atom backbone is an architectural choice, not a harmless preprocessing
+detail: atoms beyond the backbone are pooled into two tail qubits and bonds
+between two tail atoms are omitted. Report this loss beside every backbone-size
+ablation rather than inferring it from classification accuracy alone:
+
+```python
+from molecular_encoding import backbone_retention_profile, dataset_backbone_summary
+
+backbone_retention_profile(smiles, backbone_sizes=(6, 8, 10, 12))
+dataset_backbone_summary(bbpb_smiles, backbone_sizes=(6, 8, 10, 12))
+```
+
+`represented_bond_fraction` is the fraction of molecular bonds represented by
+an Rxx gate (backbone--backbone or backbone--tail); `tail_tail_bonds_dropped`
+is the graph connectivity lost by the fixed-width compression.
+
+For a chemically motivated feature ablation, `prop="tpsa_contrib"` adds an
+atomwise topological-polar-surface-area signal. Unlike the earlier per-molecule
+min--max LogP scaling, this uses fixed chemical ranges, so equal angles retain
+the same interpretation across molecules.
 
 ---
 

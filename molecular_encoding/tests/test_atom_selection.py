@@ -9,8 +9,17 @@ Run with: pytest molecular_encoding/tests/
 import pytest
 from rdkit import Chem
 
+try:
+    from qiskit import QuantumCircuit  # noqa: F401
+    HAS_QISKIT = True
+except ImportError:
+    HAS_QISKIT = False
+
 from molecular_encoding.preprocessing import preprocess_smiles
 from molecular_encoding.atom_selection import assign_qubits, Strategy, describe_assignment
+from molecular_encoding.capacity_analysis import backbone_retention_profile
+from molecular_encoding.collision_analysis import run_collision_analysis
+from molecular_encoding.properties import get_atom_properties
 
 
 # --- Test molecules ---
@@ -62,6 +71,15 @@ class TestAssignment:
         # After canonicalization, c1 == c2, so assignments should be equal
         assert a1.backbone_indices == a2.backbone_indices
 
+    def test_graph_strategies_are_invariant_without_preprocessing(self):
+        """The public assignment API must not rely on callers canonicalizing."""
+        for strategy in (Strategy.CANONICAL_RANK, Strategy.PHARMACOPHORE_FIRST,
+                         Strategy.SCAFFOLD_CENTRALITY):
+            a1 = assign_qubits("OC(=O)c1ccccc1", strategy=strategy)
+            a2 = assign_qubits("c1ccc(cc1)C(=O)O", strategy=strategy)
+            assert a1.smiles == a2.smiles
+            assert a1.backbone_indices == a2.backbone_indices
+
     def test_scaffold_atoms_in_backbone_first(self):
         """For SCAFFOLD_CENTRALITY, all scaffold atoms should appear in the
         backbone (if the scaffold has ≤ n_backbone atoms)."""
@@ -98,7 +116,34 @@ class TestAssignment:
         assert "Strategy" in desc
         assert "qubit" in desc.lower() or "Qubit" in desc
 
+    def test_tpsa_property_is_a_bounded_atomwise_feature(self):
+        a = assign_qubits(preprocess_smiles(CAFFEINE))
+        values = get_atom_properties(a, "tpsa_contrib")
+        assert len(values) == a.mol.GetNumAtoms()
+        assert all(0.0 <= angle <= 3.141593 for angle in values.values())
 
+
+class TestBackboneCapacity:
+    def test_profile_exposes_the_ten_atom_loss(self):
+        profile = backbone_retention_profile(IBUPROFEN, backbone_sizes=(10, 15))
+        at_ten = profile.loc[profile["n_backbone"] == 10].iloc[0]
+        at_full = profile.loc[profile["n_backbone"] == 15].iloc[0]
+        assert at_ten["n_tail_atoms"] == 5
+        assert at_ten["represented_bond_fraction"] <= 1.0
+        assert at_full["tail_tail_bonds_dropped"] == 0
+        assert at_full["represented_bond_fraction"] == 1.0
+
+
+class TestCollisionAnalysis:
+    def test_handles_empty_and_singleton_inputs(self):
+        empty = run_collision_analysis([])
+        singleton = run_collision_analysis(["CCO"])
+        assert empty.empty
+        assert len(singleton) == 1
+        assert singleton.loc[0, "nearest_neighbor_dist"] == float("inf")
+
+
+@pytest.mark.skipif(not HAS_QISKIT, reason="Qiskit QuantumCircuit is unavailable in this environment")
 class TestCircuitBuilder:
     def test_circuit_has_correct_qubit_count(self):
         from molecular_encoding.circuit_builder import build_circuit

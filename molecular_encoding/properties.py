@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, Crippen
+from rdkit.Chem import AllChem, Crippen, rdMolDescriptors
 
 from .atom_selection import QubitAssignment
 
@@ -108,7 +108,10 @@ def crippen_logp_contrib(assignment: QubitAssignment) -> dict[int, float]:
     (lipophilic molecules cross membranes more readily).
     Atom-level contributions allow us to encode local lipophilicity.
 
-    Values are scaled to [0, π] from their natural range (typically −2 to +2).
+    Values use a fixed, dataset-independent clipping range before scaling. This
+    preserves meaningful absolute differences across molecules; per-molecule
+    min-max scaling would otherwise make unlike molecules look artificially
+    similar whenever their internal rank ordering matched.
     """
     mol = assignment.mol
     contribs = Crippen.rdMolDescriptors._CalcCrippenContribs(mol)
@@ -117,14 +120,22 @@ def crippen_logp_contrib(assignment: QubitAssignment) -> dict[int, float]:
     logp_vals = {atom.GetIdx(): contribs[atom.GetIdx()][0]
                  for atom in mol.GetAtoms()}
 
-    vals    = np.array(list(logp_vals.values()), dtype=float)
-    shifted = vals - vals.min()
-    rng     = shifted.max()
-    if rng < 1e-8:
-        rng = 1.0
+    return {idx: float(np.clip((value + 1.5) / 3.0, 0.0, 1.0) * np.pi)
+            for idx, value in logp_vals.items()}
 
-    return {idx: float(shifted[i] / rng) * np.pi
-            for i, idx in enumerate(logp_vals.keys())}
+
+def tpsa_contrib(assignment: QubitAssignment) -> dict[int, float]:
+    """Atomic topological-polar-surface-area contributions in ``[0, π]``.
+
+    TPSA directly reflects exposed heteroatom polarity, a complementary signal
+    to lipophilicity for passive BBB permeation.  A 35 Å² atomic cap covers
+    common drug-like N/O/S contributions without a dataset-fitted transform.
+    """
+    values = rdMolDescriptors._CalcTPSAContribs(assignment.mol)
+    return {
+        atom.GetIdx(): float(np.clip(values[atom.GetIdx()] / 35.0, 0.0, 1.0) * np.pi)
+        for atom in assignment.mol.GetAtoms()
+    }
 
 
 def combined_bbb(
@@ -171,15 +182,23 @@ def combined_bbb(
             for i, atom in enumerate(mol.GetAtoms())}
 
 
+def composite_pharmacophore(assignment: QubitAssignment) -> dict[int, float]:
+    """Option C: Composite Pharmacophoric Descriptor (LogP + Aromaticity + EN - H-bond penalty)."""
+    from .composite_descriptor import compute_composite_bbb_angles
+    return compute_composite_bbb_angles(assignment)
+
+
 # ---------------------------------------------------------------------------
 # Registry — add new extractors here
 # ---------------------------------------------------------------------------
 
 PROPERTY_REGISTRY = {
-    "pauling_en"       : pauling_en,
-    "gasteiger_charge" : gasteiger_charge,
-    "crippen_logp"     : crippen_logp_contrib,
-    "combined_bbb"     : combined_bbb,
+    "pauling_en"             : pauling_en,
+    "gasteiger_charge"       : gasteiger_charge,
+    "crippen_logp"           : crippen_logp_contrib,
+    "tpsa_contrib"           : tpsa_contrib,
+    "combined_bbb"           : combined_bbb,
+    "composite_pharmacophore": composite_pharmacophore,
 }
 
 DEFAULT_PROPERTY = "pauling_en"

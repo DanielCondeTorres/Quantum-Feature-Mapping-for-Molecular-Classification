@@ -53,7 +53,8 @@ def build_circuit(
     alpha      : float            Scaling factor for Ry angles (default 0.1).
     prop       : str              Atomic property to use for Ry angles.
                                   One of: "pauling_en", "gasteiger_charge",
-                                  "crippen_logp", "combined_bbb".
+                                  "crippen_logp", "tpsa_contrib", "combined_bbb",
+                                  or "composite_pharmacophore".
     tail_mode  : str              How to encode tail atoms into tail qubits.
                                   One of: "sum" (original), "stats", "pharm".
 

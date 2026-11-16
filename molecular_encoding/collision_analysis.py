@@ -29,9 +29,10 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 
-from .atom_selection import QubitAssignment, Strategy, assign_qubits
-from .circuit_builder import build_circuit, _encode_entanglement, ALPHA_DEFAULT
+from .atom_selection import Strategy, assign_qubits
 from .properties import get_atom_properties
+
+ALPHA_DEFAULT = 0.1
 
 
 @dataclass
@@ -165,6 +166,12 @@ def run_collision_analysis(
 
     # --- Exact collision detection ---
     fingerprint_strings = [fp.fingerprint for fp in fps]
+    if not fps:
+        columns = ["smiles", "fingerprint", "is_exact_collision",
+                   "nearest_neighbor_dist", "is_near_collision"]
+        if labels is not None:
+            columns.append("label")
+        return pd.DataFrame(columns=columns)
     counts  = Counter(fingerprint_strings)
     is_dup  = [counts[f] > 1 for f in fingerprint_strings]
 
@@ -177,7 +184,7 @@ def run_collision_analysis(
         diffs = angle_matrix - angle_matrix[i]
         dists = np.linalg.norm(diffs, axis=1)
         dists[i] = np.inf  # exclude self
-        nearest_dists.append(float(dists.min()))
+        nearest_dists.append(float(dists.min()) if n > 1 else float("inf"))
 
     is_near = [d < epsilon for d in nearest_dists]
 
@@ -192,9 +199,7 @@ def run_collision_analysis(
     if valid_labels:
         data["label"] = valid_labels
 
-    df = pd.DataFrame(data)
-
-    return df
+    return pd.DataFrame(data)
 
 
 def summarize_collisions(df: pd.DataFrame) -> dict:
