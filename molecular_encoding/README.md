@@ -43,8 +43,10 @@ J(i\mid S_t)=\sum_{u\in T_i\setminus C(S_t)} w(u)
 $$
 
 where $C(S_t)=\bigcup_{j\in S_t}T_j$ is the set of already covered tokens,
-$\widetilde C_i$ is normalized graph centrality (degree centrality by default,
-or a caller-supplied centrality), and $N(i)$ is the heavy-atom neighborhood.
+$\widetilde C_i$ is normalized graph centrality, and $N(i)$ is the heavy-atom
+neighborhood. The standalone selector falls back to degree centrality when no
+values are supplied; the public `assign_qubits` path supplies NetworkX
+betweenness centrality.
 For a Morgan token occurring $f(u)$ times in the molecule,
 $w(u)=f(u)^{-1/2}$, which reduces the marginal value of repeated environments.
 Role-token weights are fixed as follows: formal charge 3.0, donor 2.5,
@@ -159,6 +161,89 @@ Used to identify bridgehead atoms connecting molecular subgraphs.
 
 * **Current Baseline Readout:** Full measurement in the computational basis ($Z$) with `qc.measure_all()` producing a 4,096-dimensional probability distribution $\vec{p} \in \mathbb{R}^{4096}$.
 * **Proposed EstimatorV2 Readout (Work with Abdul):** Measuring single-qubit Pauli expectations $\langle Z_i \rangle \in \mathbb{R}^{12}$ and two-qubit correlators $\langle Z_i Z_j \rangle \in \mathbb{R}^{66}$ to drastically eliminate finite shot-noise sparsity.
+
+### 1.5 What the literature suggests improving — and what is actually implemented
+
+The current method and the proposed research direction are **not the same
+embedding**. Earlier work in this repository implemented and tested the
+greedy atom selector, the two global tail summaries, and the already available
+`prop`/`tail_mode` alternatives. It did **not** implement graph pooling,
+multi-feature atom registers, bond-feature-conditioned gates, or data
+re-uploading. The results above are ablations of existing options, not a test
+of the improved design proposed below.
+
+| Component | Current implementation | Bibliography-motivated next design |
+|---|---|---|
+| Meaning of `q0–q9` | Ten selected individual heavy atoms (or all atoms if fewer than ten) | Ten chemically connected **graph clusters/supernodes**, each pooling the features of its member atoms; this is a change of representation, not another atom-ranking heuristic |
+| Atom encoding | One `Ry` per backbone atom; default angle $0.1\chi_i^2$. Other implemented scalar properties replace that angle. | A compact, fixed-scale atom-feature vector (element, formal charge, valence, aromatic/ring status, hybridization, H count, stereochemistry, donor/acceptor, TPSA/logP contribution), uploaded in two or a few shallow, non-commuting rotations |
+| Bond encoding | One `Rxx` with angle equal to bond order divided by two | Encode bond type plus aromaticity, conjugation, ring membership, and stereo in edge-conditioned interactions |
+| Tail | Two fixed scalar summaries: chemistry on `q10`, topology/interface on `q11`; tail--tail bonds are not individually represented | Pool tail atom/edge attributes before uploading them through the same two qubits in a few shallow channels; quantify the information lost by this compression |
+| Ordering symmetry | Canonical parsing makes selection deterministic, but the circuit and its 4,096 output coordinates are still tied to labeled qubit positions | Use shared graph operations plus invariant pooling, or explicitly symmetrize/average over equivalent atom labelings; verify with randomized-SMILES invariance tests |
+
+This direction follows the molecular-graph literature's use of **atom and
+bond attributes with permutation-invariant aggregation**, rather than relying
+on a single scalar per atom ([Gilmer et al., 2017](https://proceedings.mlr.press/v70/gilmer17a.html)).
+For a fixed 12-qubit budget, the most meaningful change would be to let each
+backbone wire represent a chemically connected pooled fragment, rather than
+calling one atom a proxy for an entire local environment. Molecular pooling
+methods such as [MESPool](https://pmc.ncbi.nlm.nih.gov/articles/PMC10753536/)
+motivate preserving connected chemical substructures during compression.
+
+On the quantum side, [QMSE](https://arxiv.org/abs/2507.20422) encodes molecular
+bond orders and interatomic couplings as one- and two-qubit rotations, while
+[quantum graph feature maps](https://arxiv.org/abs/2211.16337) demonstrate
+graph-structured quantum embeddings on a molecular toxicity task. These works
+motivate making edges and graph structure first-class inputs; they do not show
+that their circuits will outperform this 10+2 BBBP setup. Repeating data
+encoding between shallow processing layers is another principled candidate:
+[Pérez-Salinas et al.](https://doi.org/10.22331/q-2020-02-06-226) study data
+re-uploading, and [Schuld et al.](https://doi.org/10.1103/PhysRevA.103.032430)
+show that the encoding gates determine the accessible function frequencies.
+More depth is not automatically better: expressive embeddings, entanglement,
+global measurements, and noise can concentrate quantum kernels and make them
+harder to estimate ([Thanasilp et al., 2024](https://doi.org/10.1038/s41467-024-49287-w)).
+
+#### Recommended 10+2 research variant (proposed, not implemented)
+
+1. Construct an attributed molecular graph with fixed, documented atom and
+   bond features. Use fixed chemical scales or fit normalization only inside
+   each training fold; do not rescale each molecule independently when an
+   angle is intended to have the same chemical meaning across molecules.
+2. Coarsen the graph into up to ten **connected** fragments, prioritizing
+   retention of functional groups, stereocentres, ring systems, and
+   backbone--tail boundary bonds. Store the atom-to-fragment mapping so the
+   compression can be audited. If fewer than ten fragments exist, leave the
+   remaining backbone wires idle rather than inventing pseudo-atoms.
+3. Encode a small number of pooled node channels on each backbone wire using
+   shallow interleaved rotations, and encode the coarsened fragment edges
+   using gates conditioned on bond features. Keep the two tail wires for
+   global residual chemistry and residual connectivity.
+4. Verify that changing the input SMILES traversal does not change the
+   representation (or report the variance if an ensemble approximation is
+   used). Measure represented atom/edge/functional-group coverage and
+   collision rates alongside ML metrics.
+5. Compare the proposed model against current `CHEMICAL_COVERAGE`,
+   `SMILES_ORDER`, ECFP4/RDKit descriptors, and a small classical graph model
+   on identical splits. Tune all learned scales and SVM parameters inside
+   nested training folds; report scaffold-separated evaluation as well as
+   random splits. Assess circuit depth, shot noise, and kernel spectrum before
+   claiming an improvement.
+
+The rationale is higher information content per wire and a graph-level
+inductive bias—not a promise of higher accuracy or quantum advantage. The
+literature establishes useful design principles, while the current BBBP
+results show that none of the already implemented scalar-property/tail
+variants has yet beaten the source-SMILES control in this experiment.
+
+#### References
+
+- Gilmer, J. et al. (2017). [Neural Message Passing for Quantum Chemistry](https://proceedings.mlr.press/v70/gilmer17a.html). *ICML / PMLR 70*, 1263–1272.
+- Kim, J. et al. (2023). [MESPool: Molecular Edge Shrinkage Pooling for Hierarchical Molecular Representation Learning and Property Prediction](https://pmc.ncbi.nlm.nih.gov/articles/PMC10753536/).
+- Choy, B. et al. (2025). [Encoding Molecular Structures in Quantum Machine Learning](https://arxiv.org/abs/2507.20422). Preprint.
+- Albrecht, B. et al. (2022). [Quantum Feature Maps for Graph Machine Learning on a Neutral Atom Quantum Processor](https://arxiv.org/abs/2211.16337). Preprint.
+- Pérez-Salinas, A. et al. (2020). [Data Re-uploading for a Universal Quantum Classifier](https://doi.org/10.22331/q-2020-02-06-226). *Quantum 4*, 226.
+- Schuld, M., Sweke, R. & Meyer, J. J. (2021). [Effect of Data Encoding on the Expressive Power of Variational Quantum-Machine-Learning Models](https://doi.org/10.1103/PhysRevA.103.032430). *Physical Review A 103*, 032430.
+- Thanasilp, S. et al. (2024). [Exponential Concentration in Quantum Kernel Methods](https://doi.org/10.1038/s41467-024-49287-w). *Nature Communications 15*, 5200.
 
 ---
 
