@@ -29,20 +29,41 @@ ablation on a balanced 250-molecule sample, not evidence of universal
 superiority for SMILES order. See the method README and the saved per-split
 results for the protocol and limitations.
 
+![Worked aspirin example showing the RDKit molecular graph, NetworkX attributes, ten individually selected atoms, and two residual-tail summaries.](docs/assets/rdkit-networkx-10plus2.svg)
+
 ---
 
 ## Repository Structure
 
 ```
 .
-├── Classical_Benchmark.ipynb
-├── Ablation_Study_ibm_kingston[8192_shots].ipynb
-├── 10_splits_7_datasets_experiment_ibm_kingston.ipynb
-├── 10_splits_Run_1024_shots_[ibm_fez,_kingston,_marrakesh].ipynb
-├── CircuitDepth_vs_Decay_4096_shots.ipynb
-├── Signal_Decay&Convergence_shots[1024,_2048,_4096,_8192].ipynb
-└── README.md
+├── molecular_encoding/
+│   ├── chemistry/        # RDKit cleaning, selection, atom properties, tail
+│   ├── graph/            # Attributed molecular graph and optional pooling
+│   ├── quantum/          # Circuit construction and Zi/ZiZj readout
+│   ├── analysis/         # Collision, capacity, PCA and plotting tools
+│   ├── results/          # Reproducible CSV results and JSON configurations
+│   └── tests/            # Unit and invariance tests
+├── docs/
+│   ├── assets/           # README figures, including the encoding visual abstract
+│   └── generate_encoding_visual.py
+├── experiments/          # Shared tools and reproducible benchmark entry points
+│   └── legacy/           # Qiskit-dependent historical reproduction scripts
+├── BBBP.csv
+└── *.ipynb               # Original hardware and paper experiment notebooks
 ```
+
+Start with [`molecular_encoding/README.md`](molecular_encoding/README.md) for
+the method, chemistry assumptions, worked RDKit/NetworkX figure, and measured
+comparisons. Run the modular tests with:
+
+```bash
+python -m pytest molecular_encoding/tests -q
+```
+
+Run an experiment from the repository root as a module, for example
+`python -m experiments.run_selection_comparison`. Benchmark outputs are kept
+in `molecular_encoding/results/`.
 
 ---
 

@@ -15,11 +15,11 @@ try:
 except ImportError:
     HAS_QISKIT = False
 
-from molecular_encoding.preprocessing import preprocess_smiles
-from molecular_encoding.atom_selection import assign_qubits, Strategy, describe_assignment
-from molecular_encoding.capacity_analysis import backbone_retention_profile
-from molecular_encoding.collision_analysis import run_collision_analysis
-from molecular_encoding.properties import get_atom_properties
+from molecular_encoding.chemistry.preprocessing import preprocess_smiles
+from molecular_encoding.chemistry.atom_selection import assign_qubits, Strategy, describe_assignment
+from molecular_encoding.analysis.capacity_analysis import backbone_retention_profile
+from molecular_encoding.analysis.collision_analysis import run_collision_analysis
+from molecular_encoding.chemistry.properties import get_atom_properties
 
 
 # --- Test molecules ---
@@ -146,14 +146,14 @@ class TestCollisionAnalysis:
 @pytest.mark.skipif(not HAS_QISKIT, reason="Qiskit QuantumCircuit is unavailable in this environment")
 class TestCircuitBuilder:
     def test_circuit_has_correct_qubit_count(self):
-        from molecular_encoding.circuit_builder import build_circuit
+        from molecular_encoding.quantum.circuit_builder import build_circuit
         clean = preprocess_smiles(IBUPROFEN)
         a = assign_qubits(clean, strategy=Strategy.SCAFFOLD_CENTRALITY)
         qc = build_circuit(a)
         assert qc.num_qubits == 12
 
     def test_circuit_has_measure_all(self):
-        from molecular_encoding.circuit_builder import build_circuit
+        from molecular_encoding.quantum.circuit_builder import build_circuit
         clean = preprocess_smiles(CAFFEINE)
         a = assign_qubits(clean, strategy=Strategy.CANONICAL_RANK)
         qc = build_circuit(a)
@@ -161,7 +161,7 @@ class TestCircuitBuilder:
         assert qc.num_clbits == 12
 
     def test_all_tail_modes(self):
-        from molecular_encoding.circuit_builder import build_circuit
+        from molecular_encoding.quantum.circuit_builder import build_circuit
         clean = preprocess_smiles(IBUPROFEN)
         for mode in ["sum", "stats", "pharm"]:
             a  = assign_qubits(clean, strategy=Strategy.SCAFFOLD_CENTRALITY)

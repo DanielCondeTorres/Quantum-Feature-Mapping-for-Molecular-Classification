@@ -34,9 +34,9 @@ from __future__ import annotations
 import numpy as np
 from qiskit import QuantumCircuit
 
-from .atom_selection import QubitAssignment
-from .properties import get_atom_properties, PAULING_EN
-from .tail_summaries import summarize_tail
+from ..chemistry.atom_selection import QubitAssignment
+from ..chemistry.properties import get_atom_properties, PAULING_EN
+from ..chemistry.tail_summaries import summarize_tail
 
 ALPHA_DEFAULT = 0.1   # Same as original QAMP 2026
 

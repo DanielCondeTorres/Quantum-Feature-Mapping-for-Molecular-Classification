@@ -1,6 +1,6 @@
 """Paired BBBP ablation of the molecular_encoding options already implemented.
 
-Run from the repository root with ``python run_embedding_ablation.py``.
+Run from the repository root with ``python -m experiments.run_embedding_ablation``.
 The backbone selector, data sample, folds, scaling, classifier, and exact
 statevector simulator are held constant. The script compares all atom-property
 embeddings with the global tail, then compares existing tail modes using the
@@ -15,10 +15,10 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from molecular_encoding.atom_selection import Strategy
-from run_selection_comparison import (
-    _evaluate_svm,
-    _prepare_unique_balanced_data,
+from molecular_encoding.chemistry.atom_selection import Strategy
+from experiments.common import (
+    evaluate_svm,
+    prepare_unique_balanced_data,
     statevector_features,
 )
 
@@ -41,7 +41,7 @@ def run_ablation(
     test_size: float = 0.25,
     seed: int = 42,
 ):
-    data, data_info = _prepare_unique_balanced_data(dataset, per_class, seed)
+    data, data_info = prepare_unique_balanced_data(dataset, per_class, seed)
     smiles = data["smiles"].astype(str).tolist()
     y = data["p_np"].to_numpy()
     splitter = StratifiedShuffleSplit(
@@ -67,7 +67,7 @@ def run_ablation(
             )
             for value in smiles
         ])
-        records.extend(_evaluate_svm(features, y, splits, name))
+        records.extend(evaluate_svm(features, y, splits, name))
 
     per_split = pd.DataFrame(records)
     summary_rows = []
@@ -83,8 +83,8 @@ def run_ablation(
         })
     summary = pd.DataFrame(summary_rows)
 
-    output = Path("molecular_encoding")
-    output.mkdir(exist_ok=True)
+    output = Path("molecular_encoding/results")
+    output.mkdir(parents=True, exist_ok=True)
     per_split.to_csv(output / "embedding_ablation_per_split.csv", index=False)
     summary.to_csv(output / "embedding_ablation_summary.csv", index=False)
     settings = {

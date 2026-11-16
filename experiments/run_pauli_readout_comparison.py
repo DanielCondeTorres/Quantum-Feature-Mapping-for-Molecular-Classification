@@ -17,9 +17,9 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from molecular_encoding.atom_selection import Strategy
-from molecular_encoding.readout import features_from_probabilities
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_probabilities
+from molecular_encoding.chemistry.atom_selection import Strategy
+from molecular_encoding.quantum.readout import features_from_probabilities
+from experiments.common import prepare_unique_balanced_data, statevector_probabilities
 
 
 def _readout_ablation(probabilities: np.ndarray) -> dict[str, np.ndarray]:
@@ -75,7 +75,7 @@ def _score_fixed_c(features, y, splits, name, evaluation):
 
 
 def main():
-    data, data_info = _prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
+    data, data_info = prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
     smiles, y = data["smiles"].astype(str).tolist(), data["p_np"].to_numpy()
     splits = list(StratifiedShuffleSplit(n_splits=10, test_size=.25,
                                          random_state=42).split(y, y))
@@ -111,7 +111,8 @@ def main():
         f1_mean=("f1", "mean"), f1_std=("f1", "std"),
         auc_roc_mean=("auc_roc", "mean"), auc_roc_std=("auc_roc", "std"),
     ).reset_index()
-    out = Path("molecular_encoding")
+    out = Path("molecular_encoding/results")
+    out.mkdir(parents=True, exist_ok=True)
     per_split.to_csv(out / "pauli_readout_per_split.csv", index=False)
     summary.to_csv(out / "pauli_readout_summary.csv", index=False)
     settings = {**data_info, "n_splits": 10, "test_size": .25, "seed": 42,

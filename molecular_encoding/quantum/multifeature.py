@@ -13,10 +13,10 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Crippen, rdMolDescriptors
 
-from .atom_selection import QubitAssignment
-from .backbone_selection import atom_role_tokens
-from .properties import PAULING_EN
-from .tail_summaries import summarize_tail
+from ..chemistry.atom_selection import QubitAssignment
+from ..chemistry.backbone_selection import atom_role_tokens
+from ..chemistry.properties import PAULING_EN
+from ..chemistry.tail_summaries import summarize_tail
 
 
 def multifeature_gate_operations(assignment: QubitAssignment) -> tuple[tuple, ...]:

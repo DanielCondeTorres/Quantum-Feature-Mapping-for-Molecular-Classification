@@ -13,13 +13,17 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from molecular_encoding.atom_selection import Strategy
-from run_graph_pooling_comparison import _evaluate_nested_c, _evaluate_svm
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
+from molecular_encoding.chemistry.atom_selection import Strategy
+from experiments.common import (
+    evaluate_nested_c,
+    evaluate_svm,
+    prepare_unique_balanced_data,
+    statevector_features,
+)
 
 
 def main():
-    data, info = _prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
+    data, info = prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
     smiles = data["smiles"].astype(str).tolist()
     y = data["p_np"].to_numpy()
     splits = list(StratifiedShuffleSplit(n_splits=10, test_size=.25, random_state=42).split(y, y))
@@ -35,15 +39,16 @@ def main():
     for name, strategy, prop in configs:
         print(f"Generating {name}", flush=True)
         features = np.stack([statevector_features(s, strategy, prop=prop) for s in smiles])
-        records.extend(_evaluate_svm(features, y, splits, name))
-        records.extend(_evaluate_nested_c(features, y, splits, 42, f"{name}__nested_C"))
+        records.extend(evaluate_svm(features, y, splits, name))
+        records.extend(evaluate_nested_c(features, y, splits, 42, f"{name}__nested_C"))
     per_split = pd.DataFrame(records)
     summary = per_split.groupby("method", sort=False).agg(
         accuracy_mean=("accuracy", "mean"), accuracy_std=("accuracy", "std"),
         f1_mean=("f1", "mean"), f1_std=("f1", "std"),
         auc_roc_mean=("auc_roc", "mean"), auc_roc_std=("auc_roc", "std"),
     ).reset_index()
-    out = Path("molecular_encoding")
+    out = Path("molecular_encoding/results")
+    out.mkdir(parents=True, exist_ok=True)
     per_split.to_csv(out / "multifeature_comparison_per_split.csv", index=False)
     summary.to_csv(out / "multifeature_comparison_summary.csv", index=False)
     settings = {**info, "n_splits": 10, "test_size": .25, "seed": 42,

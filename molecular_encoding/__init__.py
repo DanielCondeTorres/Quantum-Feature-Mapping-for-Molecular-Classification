@@ -8,14 +8,19 @@ Provides chemistry-aware atom selection and global tail summaries for the
 global two-qubit tail; experimental encodings are explicitly opt-in.
 """
 
-from .atom_selection import assign_qubits, Strategy
-from .preprocessing import preprocess_smiles
-from .composite_descriptor import compute_composite_bbb_angles
-from .capacity_analysis import backbone_retention_profile, dataset_backbone_summary
-from .backbone_selection import BackboneSelection, select_backbone_atoms
-from .tail_summaries import TailSummary, summarize_tail
-from .graph_pooling import PooledMolecule, gate_operations, pool_molecule
-from .readout import (
+from .chemistry import (
+    assign_qubits,
+    Strategy,
+    preprocess_smiles,
+    compute_composite_bbb_angles,
+    BackboneSelection,
+    select_backbone_atoms,
+    TailSummary,
+    summarize_tail,
+)
+from .analysis.capacity_analysis import backbone_retention_profile, dataset_backbone_summary
+from .graph import PooledMolecule, gate_operations, pool_molecule
+from .quantum.readout import (
     DEFAULT_READOUT,
     features_from_counts,
     features_from_probabilities,
@@ -65,7 +70,7 @@ def encode_molecule(
 
     # Keep the chemistry-only part of the package usable on machines where
     # Qiskit is intentionally not installed (e.g. data-preparation workers).
-    from .circuit_builder import build_circuit
+    from .quantum.circuit_builder import build_circuit
     qc = build_circuit(assignment, **circuit_kwargs)
     return qc, assignment
 
@@ -77,7 +82,7 @@ def encode_graph_pooled_molecule(smiles: str):
     atom clusters rather than individual selected atoms. The original encoder
     remains the default and is unchanged.
     """
-    from .graph_pooling import build_graph_pooled_circuit
+    from .graph.graph_pooling import build_graph_pooled_circuit
 
     return build_graph_pooled_circuit(smiles)
 
@@ -85,7 +90,7 @@ def encode_graph_pooled_molecule(smiles: str):
 def __getattr__(name):
     """Lazily expose the optional Qiskit circuit builder."""
     if name == "build_circuit":
-        from .circuit_builder import build_circuit
+        from .quantum.circuit_builder import build_circuit
         return build_circuit
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

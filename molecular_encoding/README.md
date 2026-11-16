@@ -3,6 +3,29 @@
 
 A self-contained Python module designed for the **QAMP 2027** follow-up study to evaluate exponential expressivity and representation bias in the 10+2 Quantum Feature Map on NISQ hardware.
 
+## Package map
+
+The package is organized by responsibility; experiment outputs are kept out of
+the Python source directories:
+
+```text
+molecular_encoding/
+├── chemistry/   # RDKit preprocessing, atom selection, properties, tail summaries
+├── graph/       # molecular graph operations and optional graph pooling
+├── quantum/     # circuit construction, feature uploads, measurement readout
+├── analysis/    # collision/capacity diagnostics, PCA, plotting
+├── results/     # versioned CSV metrics and JSON run settings
+└── tests/       # unit and invariance tests
+```
+
+The stable convenience API is exported from `molecular_encoding`; for focused
+work, import from the relevant subpackage, e.g.
+`molecular_encoding.chemistry.atom_selection` or
+`molecular_encoding.quantum.readout`. Run tests from the repository root with
+`python -m pytest molecular_encoding/tests -q`. Benchmark entry points live in
+`experiments/` and are invoked as `python -m experiments.run_<name>`; outputs default to
+`molecular_encoding/results/`.
+
 ---
 
 ## 1. Core Mathematical and Chemical Concepts
@@ -10,7 +33,7 @@ A self-contained Python module designed for the **QAMP 2027** follow-up study to
 ### 1.1 Chemistry-aware 10-atom backbone selection
 
 The default strategy is `Strategy.CHEMICAL_COVERAGE`, implemented in
-`backbone_selection.py`. It combines RDKit Morgan atom environments at radii
+`chemistry/backbone_selection.py`. It combines RDKit Morgan atom environments at radii
 0, 1, and 2 (including stereochemistry and bond types); donor/acceptor feature roles; formal charge; aromaticity; ring
 membership; graph centrality; and connectivity. A deterministic greedy
 marginal-coverage procedure selects at most ten heavy atoms. Canonical ranks
@@ -68,7 +91,7 @@ all remaining heavy atoms are compressed into two scalar tail channels and
 some atom-level detail is lost. Consequently, selection quality must be
 evaluated together with classification and information-retention diagnostics.
 
-#### Visual abstract: what happens to a 20-heavy-atom molecule?
+#### Visual abstract: what happens when a molecule exceeds ten heavy atoms?
 
 The two tail qubits are **not** five atoms each and they do not represent ten
 extra atoms individually. The selector chooses up to ten atoms from the full
@@ -78,21 +101,13 @@ summarizes its internal connectivity/interface with the selected backbone.
 Tail-to-backbone bonds are connected to q11; tail-to-tail bonds are summarized
 in the structural score, not emitted as individual gates.
 
-```mermaid
-flowchart LR
-    A[RDKit molecule graph<br/>20 heavy atoms] --> B[Canonicalize graph<br/>compute Morgan / role tokens]
-    B --> C[Greedy marginal coverage<br/>select up to 10 atoms]
-    C --> D[q0–q9<br/>10 selected atoms, one per qubit]
-    C --> E[Residual tail<br/>10 atoms in this example]
-    E --> F[q10: tail chemistry<br/>size + heteroatom / charge / donor / acceptor]
-    E --> G[q11: tail structure<br/>tail bonds + backbone interface]
-    D --> H[Ry atom features<br/>Rxx represented bonds]
-    F --> I[12-qubit state]
-    G --> I
-    H --> I
-    I --> J[Measure computational-basis bitstrings]
-    J --> K[Default classifier input<br/>12 Zi + 66 ZiZj = 78 features]
-```
+![Visual abstract: RDKit and NetworkX build an aspirin graph; chemistry-aware greedy selection maps ten atoms to q0–q9 and summarizes the remaining three across q10–q11.](../docs/assets/rdkit-networkx-10plus2.svg)
+
+The figure is generated from the actual implementation and canonical aspirin
+SMILES by `python docs/generate_encoding_visual.py`. It intentionally shows
+NetworkX as the attributed-graph/centrality layer, not as a graph-contraction
+algorithm: the three orange nodes remain a residual tail and are summarized
+lossily by chemistry and topology/interface channels.
 
 For molecules with at most ten heavy atoms, every heavy atom gets a backbone
 qubit and the unused backbone wires remain idle; there is no residual tail if
@@ -166,7 +181,7 @@ remaining qubits carry whole-molecule context.
 
 #### Controlled comparison against source-SMILES order
 
-To isolate the effect of atom assignment, `run_selection_comparison.py`
+To isolate the effect of atom assignment, `experiments/run_selection_comparison.py`
 compares `SMILES_ORDER` (the ten atoms encountered first in the input SMILES)
 and `CHEMICAL_COVERAGE` on the same 250 balanced BBBP molecules, canonical
 structure deduplication, ten stratified 75/25 splits, SVC with an RBF kernel
@@ -192,9 +207,10 @@ on the reported test splits. The balanced 250-molecule subset is a small
 benchmark sample, and repeated shuffle-splits are correlated; these summary
 statistics are descriptive rather than a formal significance test. Exact
 per-split results and settings are saved in
-`selection_vs_smiles_per_split.csv`, `selection_vs_smiles_summary.csv`, and
-`selection_vs_smiles_settings.json`. Reproduce from the repository root with
-`python run_selection_comparison.py`.
+`results/selection_vs_smiles_per_split.csv`,
+`results/selection_vs_smiles_summary.csv`, and
+`results/selection_vs_smiles_settings.json`. Reproduce from the repository root with
+`python -m experiments.run_selection_comparison`.
 
 The comparison uses NumPy exact statevector evolution of the circuit's $Ry$
 and $Rxx$ gates because Qiskit could not be imported in the execution
@@ -209,7 +225,7 @@ new frameworks and reaches a different conclusion.
 
 ```python
 from molecular_encoding import encode_molecule
-from molecular_encoding.atom_selection import Strategy, assign_qubits, describe_assignment
+from molecular_encoding.chemistry.atom_selection import Strategy, assign_qubits, describe_assignment
 
 assignment = assign_qubits("CC(=O)Nc1ccccc1", strategy=Strategy.CHEMICAL_COVERAGE)
 print(describe_assignment(assignment))  # Includes per-qubit selection rationale.
@@ -284,10 +300,10 @@ therefore reduces the model input from up to 4096 bins to 78 moments. Ablations
 can use 12 (`z` only), 66 (`zz` only), or 4096 (`full`) features. This changes
 the SVM representation, not the quantum circuit or measurement basis.
 
-The implementation is isolated in `molecular_encoding/readout.py`:
+The implementation is isolated in `quantum/readout.py`:
 
 ```python
-from molecular_encoding import features_from_counts
+from molecular_encoding.quantum.readout import features_from_counts
 
 # `counts` is the result.get_counts() mapping from a 12-qubit measure_all run.
 X = features_from_counts(counts, readout="z_zz")  # shape (1, 78)
@@ -318,7 +334,7 @@ the current default benchmark:
 | TPSA / $Z_i$ + $Z_iZ_j$ | 78 | 0.686 ± 0.040 | **0.682 ± 0.038** | 0.760 ± 0.040 |
 
 With fixed $C=10$, the full 4096-bin distribution is generally stronger than
-the moment features (see `pauli_readout_summary.csv`). With nested $C$, only
+the moment features (see `results/pauli_readout_summary.csv`). With nested $C$, only
 $Z_i$ modestly raises the TPSA AUC (0.770 vs 0.750), while the full
 distribution retains higher TPSA accuracy (0.703 vs 0.686). For Pauling,
 $Z_i$ is better than full probabilities on these three metrics under nested
@@ -355,8 +371,8 @@ the combined 78-feature readout as requested, not because the benchmark proves
 it has the best prediction score. The full-output mode remains selectable for
 ablation and legacy reproduction.
 
-Reproduce with `python run_pauli_readout_comparison.py`; per-split metrics and
-run settings are saved as `pauli_readout_*.csv/json`. The feature-extraction
+Reproduce with `python -m experiments.run_pauli_readout_comparison`; per-split metrics and
+run settings are saved as `results/pauli_readout_*.csv/json`. The feature-extraction
 unit tests check the parity convention and 12/66/78 dimensions.
 
 ### 1.5 What the literature suggests improving — and what is actually implemented
@@ -365,7 +381,7 @@ The earlier implementation and the new experiment are **different encodings**.
 The original default continues to select ten individual atoms and uses one
 scalar `Ry` per atom plus bond-order `Rxx` gates and a two-scalar tail. The
 literature-motivated alternative is now implemented as an opt-in prototype in
-`graph_pooling.py`; it does not replace the default `encode_molecule` path.
+`graph/graph_pooling.py`; it does not replace the default `encode_molecule` path.
 
 | Component | Existing default | New experimental `GRAPH_POOLED` map |
 |---|---|---|
@@ -431,7 +447,7 @@ references motivate the design but do not predict its performance on BBBP.
 #### Scaffold-held-out and randomized-SMILES validation
 
 The random stratified split above can put close analogues in both train and
-test sets. `python run_robustness_comparison.py` adds a five-fold
+test sets. `python -m experiments.run_robustness_comparison` adds a five-fold
 `StratifiedGroupKFold` evaluation grouped by Bemis–Murcko scaffold. Exact
 duplicate canonical molecules and contradictory-label structures are removed
 before splitting, as in the earlier benchmark. Acyclic molecules have an
@@ -443,7 +459,7 @@ strings and tested on each equivalent traversal. Prediction-flip fraction
 measures how often a molecule's class prediction changes across its alternate
 strings. This is a robustness test, not a new independent sample, and results
 remain descriptive for this balanced sample. The fold-level outputs and
-settings are saved as `robustness_*.csv/json`.
+settings are saved as `results/robustness_*.csv/json`.
 
 For the scaffold comparison, the SMILES-order control is deliberately given
 the canonical SMILES string in both train and test: it still selects the first
@@ -569,8 +585,8 @@ validan ni refutan sus métricas de hardware. La evaluación actual es una
 repetición estratificada pequeña, no scaffold-held-out. Antes de afirmar que
 una PC “explica la absorción” o mejora BBBP haría falta nested CV para la
 selección de PC, validación agrupada por scaffold y una cohorte independiente.
-Reproducir con `python run_pca_bbbp_comparison.py`; resultados y metadatos se
-guardan en `pca_bbbp_*.csv/json`.
+Reproducir con `python -m experiments.run_pca_bbbp_comparison`; resultados y metadatos se
+guardan en `results/pca_bbbp_*.csv/json`.
 
 The default `CHEMICAL_COVERAGE` selector remains unchanged: it greedily covers
 distinct Morgan environments and chemical roles. The opt-in
@@ -589,7 +605,7 @@ the graph-boundary connection. Call it with
 prop="multi_physchem")`; the newer selector can be compared by substituting
 `Strategy.PHYSICOCHEMICAL_COVERAGE`.
 
-The controlled comparison (`python run_multifeature_comparison.py`) uses the
+The controlled comparison (`python -m experiments.run_multifeature_comparison`) uses the
 same balanced 250-molecule BBBP sample, ten stratified 75/25 splits, exact
 NumPy statevector probabilities, StandardScaler + RBF-SVC, and a second
 leakage-safe run that selects C inside each training fold:
@@ -613,15 +629,15 @@ claim that chemical invariance has already improved predictive performance.
 More axes increase circuit complexity and may dilute useful signals; larger
 scaffold splits, descriptor ablations, and a readout-aware model are needed
 before making a general claim. Results/settings are saved in
-`multifeature_comparison_*.csv/json`.
+`results/multifeature_comparison_*.csv/json`.
 
-Reproduce with `python run_graph_pooling_comparison.py`. The script also
+Reproduce with `python -m experiments.run_graph_pooling_comparison`. The script also
 checks four alternate SMILES traversals for each of the 250 molecules (1,000
 checks total); all produced identical canonical pooled gate sequences. The
 per-split metrics, selected inner-fold $C$ values, and run settings are stored
-in `graph_pooling_comparison_per_split.csv`,
-`graph_pooling_comparison_summary.csv`, and
-`graph_pooling_comparison_settings.json`.
+in `results/graph_pooling_comparison_per_split.csv`,
+`results/graph_pooling_comparison_summary.csv`, and
+`results/graph_pooling_comparison_settings.json`.
 
 The graph-pooled path is opt-in. For inspection without Qiskit, use
 `pool_molecule` and `gate_operations`; to build a measured circuit, install
@@ -660,35 +676,37 @@ print(gate_operations(pooled))         # deterministic 12-qubit gate list
 
 ```
 molecular_encoding/
-├── __init__.py           # Public API: chemical coverage + global tail by default
-├── preprocessing.py      # RDKit desalting, valence check, canonicalization
-├── atom_selection.py     # Atom-to-qubit strategy API and graph metadata
-├── backbone_selection.py # Greedy Morgan/chemical-role coverage selector
-├── tail_summaries.py     # Bounded chemistry and structure summaries for the tail
-├── properties.py         # Property extractors (Pauling EN, Crippen LogP, Gasteiger)
-├── circuit_builder.py    # QuantumCircuit construction with uncoupled tail fix
-├── multifeature.py       # Opt-in Pauli-axis re-upload of complementary chemistry
-├── collision_analysis.py # Fingerprinting & collision detection across datasets
-├── capacity_analysis.py  # Quantifies loss from the fixed ten-atom backbone
-├── graph_pooling.py      # Experimental connected-fragment 10+2 feature map
-├── visualization.py      # Molecular graph and circuit heatmap plotting
-├── composite_descriptor.py # BBB-oriented composite pharmacophore angle
-└── tests/
-    ├── test_atom_selection.py
-    ├── test_graph_pooling.py
-    └── test_multifeature.py
+├── __init__.py           # Stable public API and end-to-end encoder
+├── chemistry/            # RDKit preprocessing, selection, properties, summaries
+├── graph/                # Molecular graph tools and optional pooling prototype
+├── quantum/              # Circuit builder, feature upload, Zi/ZiZj readout
+├── analysis/             # Capacity, collision, PCA and plotting diagnostics
+├── results/              # CSV metrics and JSON settings from experiment runs
+└── tests/                # Unit, behavior and traversal-invariance tests
+
+docs/
+├── assets/               # README figures
+└── generate_encoding_visual.py  # Rebuild RDKit/NetworkX visual abstract
+
+experiments/
+├── common.py              # Shared sample prep, exact simulator and SVM scorers
+├── run_*.py               # Comparison-specific experiment orchestration
+└── legacy/                # Qiskit-dependent historical comparisons
 ```
 
-`run_multifeature_comparison.py` reproduces the paired selector/property
-comparison and writes its fold metrics and settings to `molecular_encoding/`.
+`experiments/README.md` gives the entry-point commands and describes the
+shared evaluation layer.
 
-The root-level `run_graph_pooling_comparison.py` reproduces the controlled
-baseline comparison and writes split-level metrics and settings alongside
-the module.
+`python -m experiments.run_multifeature_comparison` reproduces the paired selector/property
+comparison and writes its fold metrics and settings to `molecular_encoding/results/`.
 
-`run_robustness_comparison.py` performs scaffold-grouped validation and
+`python -m experiments.run_graph_pooling_comparison` reproduces the controlled baseline
+comparison and writes split-level metrics and settings to the same results
+directory.
+
+`python -m experiments.run_robustness_comparison` performs scaffold-grouped validation and
 randomized-SMILES inference testing; its fold assignments, performance, flip
-rates, and run settings are also saved under `molecular_encoding/`.
+rates, and run settings are also saved under `molecular_encoding/results/`.
 
 ### Capacity and collision reporting
 
@@ -773,6 +791,6 @@ control in the earlier random-split comparison, and the order-based control is
 not traversal-invariant. Keep Pauling as the backward-compatible default;
 TPSA is an opt-in, promising BBBP ablation, not a proven general improvement.
 
-Results and settings are in `embedding_ablation_*.csv/json` and can be
-reproduced with `python run_embedding_ablation.py`. Exact NumPy statevector
+Results and settings are in `results/embedding_ablation_*.csv/json` and can be
+reproduced with `python -m experiments.run_embedding_ablation`. Exact NumPy statevector
 evolution was used because Qiskit was unavailable in the run environment.

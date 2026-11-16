@@ -29,9 +29,9 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 
-from .atom_selection import Strategy, assign_qubits
-from .properties import get_atom_properties
-from .tail_summaries import summarize_tail
+from ..chemistry.atom_selection import Strategy, assign_qubits
+from ..chemistry.properties import get_atom_properties
+from ..chemistry.tail_summaries import summarize_tail
 
 ALPHA_DEFAULT = 0.1
 

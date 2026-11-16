@@ -21,7 +21,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Crippen, rdMolDescriptors
 
-from .backbone_selection import atom_role_tokens
+from ..chemistry.backbone_selection import atom_role_tokens
 
 
 N_BACKBONE = 10

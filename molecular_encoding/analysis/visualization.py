@@ -27,7 +27,7 @@ import matplotlib.cm as cm
 import numpy as np
 import networkx as nx
 
-from .atom_selection import QubitAssignment
+from ..chemistry.atom_selection import QubitAssignment
 from .collision_analysis import CircuitFingerprint
 
 

@@ -1,7 +1,7 @@
 """Tests for estimating Pauli-Z observables from basis probabilities."""
 import numpy as np
 
-from molecular_encoding.readout import (
+from molecular_encoding.quantum.readout import (
     features_from_counts,
     features_from_probabilities,
     pauli_z_moments,

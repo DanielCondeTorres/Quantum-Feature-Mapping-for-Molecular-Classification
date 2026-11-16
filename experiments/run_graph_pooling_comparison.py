@@ -4,7 +4,7 @@ Runs paired splits on the same balanced, canonical-deduplicated 250-molecule
 BBBP sample used in the existing ablations. The atom selector, input encoding,
 classifier, and splits remain fixed within each comparator.
 
-Run from repository root: ``python run_graph_pooling_comparison.py``.
+Run from repository root: ``python -m experiments.run_graph_pooling_comparison``.
 The new graph-pooled circuits are simulated exactly with NumPy because Qiskit
 is optional/unavailable in some development environments.
 """
@@ -16,18 +16,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from rdkit import Chem
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, StratifiedShuffleSplit
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.model_selection import StratifiedShuffleSplit
 
-from molecular_encoding.atom_selection import Strategy
-from molecular_encoding.graph_pooling import N_QUBITS, gate_operations, pool_molecule
-from molecular_encoding.readout import features_from_probabilities
-from run_selection_comparison import (
-    _evaluate_svm,
-    _prepare_unique_balanced_data,
+from molecular_encoding.chemistry.atom_selection import Strategy
+from molecular_encoding.graph.graph_pooling import N_QUBITS, gate_operations, pool_molecule
+from molecular_encoding.quantum.readout import features_from_probabilities
+from experiments.common import (
+    evaluate_svm,
+    evaluate_nested_c,
+    prepare_unique_balanced_data,
     statevector_features,
 )
 
@@ -90,37 +87,9 @@ def verify_random_smiles_invariance(smiles_list: list[str], n_variants: int = 4)
     return checked
 
 
-def _evaluate_nested_c(features, y, splits, seed: int, method: str):
-    """Tune C only inside each outer training fold, then score its held-out fold."""
-    rows = []
-    for split_id, (train_idx, test_idx) in enumerate(splits, start=1):
-        inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed + split_id)
-        estimator = make_pipeline(StandardScaler(), SVC(kernel="rbf"))
-        search = GridSearchCV(
-            estimator,
-            {"svc__C": (0.1, 1.0, 10.0, 100.0, 1000.0)},
-            scoring="roc_auc",
-            cv=inner_cv,
-            refit=True,
-            n_jobs=1,
-        )
-        search.fit(features[train_idx], y[train_idx])
-        predictions = search.predict(features[test_idx])
-        decision = search.decision_function(features[test_idx])
-        rows.append({
-            "split": split_id,
-            "method": method,
-            "accuracy": accuracy_score(y[test_idx], predictions),
-            "f1": f1_score(y[test_idx], predictions, zero_division=0),
-            "auc_roc": roc_auc_score(y[test_idx], decision),
-            "selected_c": search.best_params_["svc__C"],
-        })
-    return rows
-
-
 def run_comparison(dataset: Path = Path("BBBP.csv"), per_class: int = 125,
                    n_splits: int = 10, test_size: float = 0.25, seed: int = 42):
-    data, data_info = _prepare_unique_balanced_data(dataset, per_class, seed)
+    data, data_info = prepare_unique_balanced_data(dataset, per_class, seed)
     smiles = data["smiles"].astype(str).tolist()
     y = data["p_np"].to_numpy()
     splitter = StratifiedShuffleSplit(n_splits=n_splits, test_size=test_size, random_state=seed)
@@ -145,9 +114,9 @@ def run_comparison(dataset: Path = Path("BBBP.csv"), per_class: int = 125,
     records = []
     for method, features in feature_sets.items():
         print(f"Evaluating {method} on paired splits (fixed C=10)...", flush=True)
-        records.extend(_evaluate_svm(features, y, splits, method))
+        records.extend(evaluate_svm(features, y, splits, method))
         print(f"Nested-C evaluation for {method}...", flush=True)
-        records.extend(_evaluate_nested_c(features, y, splits, seed, f"{method}__nested_C"))
+        records.extend(evaluate_nested_c(features, y, splits, seed, f"{method}__nested_C"))
     per_split = pd.DataFrame(records)
     summary = per_split.groupby("method", sort=False).agg(
         accuracy_mean=("accuracy", "mean"), accuracy_std=("accuracy", "std"),
@@ -169,7 +138,8 @@ def run_comparison(dataset: Path = Path("BBBP.csv"), per_class: int = 125,
         "random_smiles_invariance_checks": n_invariance_checks,
         "note": "Proposed graph-pooled circuit; Qiskit hardware not run.",
     }
-    output = Path("molecular_encoding")
+    output = Path("molecular_encoding/results")
+    output.mkdir(parents=True, exist_ok=True)
     per_split.to_csv(output / "graph_pooling_comparison_per_split.csv", index=False)
     summary.to_csv(output / "graph_pooling_comparison_summary.csv", index=False)
     pd.Series(settings).to_json(output / "graph_pooling_comparison_settings.json", indent=2)

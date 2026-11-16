@@ -3,8 +3,8 @@
 import numpy as np
 from rdkit import Chem
 
-from molecular_encoding.atom_selection import Strategy, assign_qubits
-from molecular_encoding.multifeature import multifeature_gate_operations
+from molecular_encoding.chemistry.atom_selection import Strategy, assign_qubits
+from molecular_encoding.quantum.multifeature import multifeature_gate_operations
 
 
 def test_multifeature_map_is_canonical_smiles_invariant():

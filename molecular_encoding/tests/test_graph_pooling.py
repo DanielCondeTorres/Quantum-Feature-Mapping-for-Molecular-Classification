@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from molecular_encoding.graph_pooling import gate_operations, pool_molecule
+from molecular_encoding.graph.graph_pooling import gate_operations, pool_molecule
 
 
 @pytest.mark.parametrize("smiles", [

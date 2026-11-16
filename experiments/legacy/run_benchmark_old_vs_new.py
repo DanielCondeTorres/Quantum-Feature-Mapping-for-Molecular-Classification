@@ -27,9 +27,9 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.preprocessing import StandardScaler
 
 from molecular_encoding import encode_molecule
-from molecular_encoding.atom_selection import Strategy, assign_qubits
-from molecular_encoding.circuit_builder import build_circuit
-from molecular_encoding.preprocessing import preprocess_smiles
+from molecular_encoding.chemistry.atom_selection import Strategy, assign_qubits
+from molecular_encoding.quantum.circuit_builder import build_circuit
+from molecular_encoding.chemistry.preprocessing import preprocess_smiles
 
 # --- 1. ORIGINAL QMSE FEATURE MAP (from QAMP 2026 paper) ---
 EN_MAP = {'H': 2.20, 'Li': 0.98, 'Be': 1.57, 'B': 2.04, 'C': 2.55,

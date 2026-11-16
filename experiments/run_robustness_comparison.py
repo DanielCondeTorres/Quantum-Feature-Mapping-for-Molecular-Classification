@@ -18,8 +18,8 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from molecular_encoding.atom_selection import Strategy
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
+from molecular_encoding.chemistry.atom_selection import Strategy
+from experiments.common import prepare_unique_balanced_data, statevector_features
 
 
 def _score(y_true, prediction, decision):
@@ -157,14 +157,15 @@ def _summarize(performance):
 
 
 def main():
-    data, info = _prepare_unique_balanced_data(Path("BBBP.csv"), per_class=125, seed=42)
+    data, info = prepare_unique_balanced_data(Path("BBBP.csv"), per_class=125, seed=42)
     scaffold_count = len({
         MurckoScaffold.MurckoScaffoldSmiles(smiles=s) or "<ACYCLIC>"
         for s in data["canonical_smiles"].astype(str)
     })
     scaffold, fold_info = run_scaffold_cv(data)
     randomized, flips, variant_summary = run_smiles_robustness(data)
-    out = Path("molecular_encoding")
+    out = Path("molecular_encoding/results")
+    out.mkdir(parents=True, exist_ok=True)
     scaffold.to_csv(out / "robustness_scaffold_per_fold.csv", index=False)
     _summarize(scaffold).to_csv(out / "robustness_scaffold_summary.csv", index=False)
     fold_info.to_csv(out / "robustness_scaffold_folds.csv", index=False)

@@ -1,7 +1,7 @@
 """Leakage and numeric-safety tests for fold-fitted PCA descriptors."""
 import numpy as np
 
-from molecular_encoding.pca_features import FoldPCA, molecular_descriptor_matrix
+from molecular_encoding.analysis.pca_features import FoldPCA, molecular_descriptor_matrix
 
 
 def test_rdkit_descriptor_matrix_is_fixed_width_and_finite():

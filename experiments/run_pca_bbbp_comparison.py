@@ -18,10 +18,10 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from molecular_encoding.atom_selection import Strategy, assign_qubits
-from molecular_encoding.pca_features import FoldPCA, molecular_descriptor_matrix
-from molecular_encoding.tail_summaries import summarize_tail
-from run_selection_comparison import _prepare_unique_balanced_data, statevector_features
+from molecular_encoding.chemistry.atom_selection import Strategy, assign_qubits
+from molecular_encoding.analysis.pca_features import FoldPCA, molecular_descriptor_matrix
+from molecular_encoding.chemistry.tail_summaries import summarize_tail
+from experiments.common import prepare_unique_balanced_data, statevector_features
 
 
 def _score(features, y, splits, name):
@@ -38,7 +38,7 @@ def _score(features, y, splits, name):
 
 
 def main():
-    data, info = _prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
+    data, info = prepare_unique_balanced_data(Path("BBBP.csv"), 125, 42)
     smiles = data["smiles"].astype(str).tolist()
     y = data["p_np"].to_numpy()
     splits = list(StratifiedShuffleSplit(n_splits=10, test_size=.25,
@@ -90,7 +90,8 @@ def main():
     for name in ("TPSA_quantum_existing_tail",):
         records.extend(_score(baseline, y, splits, name))
     per_split = pd.DataFrame(records)
-    out = Path("molecular_encoding")
+    out = Path("molecular_encoding/results")
+    out.mkdir(parents=True, exist_ok=True)
     per_split.to_csv(out / "pca_bbbp_per_split.csv", index=False)
     summary = per_split.groupby("method", sort=False).agg(
         accuracy_mean=("accuracy", "mean"), accuracy_std=("accuracy", "std"),
@@ -99,7 +100,7 @@ def main():
     ).reset_index()
     summary.to_csv(out / "pca_bbbp_summary.csv", index=False)
     settings = {**info, "outer_splits": 10, "test_size": .25, "seed": 42,
-                "descriptors": list(__import__("molecular_encoding.pca_features", fromlist=["DESCRIPTOR_NAMES"]).DESCRIPTOR_NAMES),
+                "descriptors": list(__import__("molecular_encoding.analysis.pca_features", fromlist=["DESCRIPTOR_NAMES"]).DESCRIPTOR_NAMES),
                 "pca_fit": "separate StandardScaler and full 9-component PCA fit on outer training molecules only",
                 "angle": "theta_k = pi * sigmoid(score_k / RMS_train_k)",
                 "quantum": "PC1+PC2 arm replaces q10/q11 global summaries; selected-PC arm selects max absolute PC-label correlation on outer training only for q10 and retains structural tail summary on q11",

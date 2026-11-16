@@ -12,7 +12,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from .atom_selection import Strategy, assign_qubits
+from ..chemistry.atom_selection import Strategy, assign_qubits
 
 
 def backbone_retention_profile(
