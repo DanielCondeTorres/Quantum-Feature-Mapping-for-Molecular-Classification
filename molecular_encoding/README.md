@@ -390,15 +390,61 @@ publicarse media y dispersión entre folds, además de una evaluación agrupada
 por scaffold; no escoger la variante por el mejor resultado sobre los mismos
 folds y luego presentar ese resultado como una estimación imparcial.
 
-En este repositorio el PCA **no es todavía un modo de embedding implementado
-ni un resultado medido**. La opción `multi_physchem` existente es una subida
-directa, interpretable y sin PCA; en la comparación BBBP guardada rindió peor
-que TPSA. Por tanto, PCA queda como hipótesis experimental, no como mejora
-afirmada. Antes de integrarlo como modo estable hace falta implementar el
-transformador con ajuste por fold y compararlo con las ablaciones individuales
-bajo validación nested/scaffold. Así se evita que un PCA ajustado una sola vez
-al dataset completo dé métricas optimistas o que el nombre “combinado” oculte
-una decisión post-hoc.
+#### Prueba exploratoria: PCA en los dos qubits auxiliares para BBBP
+
+Se implementó y midió una variante experimental que conserva el selector
+químico y el backbone atómico con `tpsa_contrib`, y sustituye solo los resúmenes
+globales de q10/q11 por PC1/PC2. Se calcularon nueve descriptores RDKit por
+molécula: peso molecular, MolLogP, TPSA, HBD, HBA, enlaces rotables, anillos
+aromáticos, fracción C sp3 y carga formal total. En cada una de diez
+particiones estratificadas (250 moléculas BBBP balanceadas, test 25%, semilla
+42), el escalador y PCA se ajustan **solo sobre las moléculas de entrenamiento**.
+
+Para descriptor $j$ se calcula $z_{ij}=(x_{ij}-\mu_j^{train})/\sigma_j^{train}$,
+se diagonaliza $C=Z_{train}^{T}Z_{train}/(n_{train}-1)$ y el score de PC $k$ es
+$s_{ik}=z_i v_k$. El score se transforma a rotación acotada usando la escala
+RMS calculada sobre las puntuaciones de entrenamiento:
+
+$$\theta_{ik}=\pi\,\sigma\!\left(\frac{s_{ik}}
+{\sqrt{\operatorname{mean}_{train}(s_k^2)}}\right),\quad
+\sigma(u)=\frac{1}{1+e^{-u}}.$$
+
+Así, PC1 y PC2 se cargan a q10 y q11, respectivamente. También se probó una
+selección supervisada exploratoria: se escoge, usando solo el fold de
+entrenamiento, la PC con mayor correlación absoluta con BBBP y se coloca en
+q10, conservando el resumen estructural de cola original en q11. Esta segunda
+regla no convierte PCA en supervisado; es un filtro de selección posterior y
+puede sobreajustar la selección, por lo que necesitaría validación nested y
+scaffold antes de recomendarse.
+
+Resultados con simulador exacto NumPy, mismo SVC RBF con $C=10$ y mismos folds:
+
+| Mapa / representación | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| TPSA backbone + resumen químico/estructural existente | 0.706 ± 0.058 | 0.678 ± 0.069 | 0.727 ± 0.063 |
+| TPSA backbone + PCA PC1/PC2 en q10/q11 | 0.683 ± 0.051 | 0.654 ± 0.063 | **0.735 ± 0.046** |
+| TPSA backbone + PC elegida en train + resumen estructural | 0.683 ± 0.054 | 0.652 ± 0.066 | 0.730 ± 0.055 |
+| RDKit globales reducidos a PC1/PC2 + SVC (control clásico) | 0.676 ± 0.052 | **0.684 ± 0.061** | 0.728 ± 0.065 |
+
+Lectura: en esta prueba PCA **no mejora de manera convincente** el embedding
+actual. PC1 explica aproximadamente 37–41% de la varianza y PC2 23–26%; PC1
+presenta correlación train-fold con la etiqueta cercana a −0.39…−0.44, pero
+PC2 mucho menor. Esa correlación de PC1 no prueba utilidad generalizable y no
+se debe interpretar su signo químicamente: el signo de un autovector es
+arbitrario. La combinación PC1+PC2 sube AUC unos 0.008, dentro de la
+variabilidad entre folds, mientras baja accuracy unos 0.024. La selección por
+correlación tampoco supera al resumen original. Por ello, PCA queda como
+opción experimental, no como embedding predeterminado ni como evidencia de
+mejora BBB.
+
+El paper adjunto reporta otro protocolo (hardware, selección/representación y
+ejecuciones propias); estas cifras son una prueba local reproducible y no
+validan ni refutan sus métricas de hardware. La evaluación actual es una
+repetición estratificada pequeña, no scaffold-held-out. Antes de afirmar que
+una PC “explica la absorción” o mejora BBBP haría falta nested CV para la
+selección de PC, validación agrupada por scaffold y una cohorte independiente.
+Reproducir con `python run_pca_bbbp_comparison.py`; resultados y metadatos se
+guardan en `pca_bbbp_*.csv/json`.
 
 The default `CHEMICAL_COVERAGE` selector remains unchanged: it greedily covers
 distinct Morgan environments and chemical roles. The opt-in

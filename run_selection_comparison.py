@@ -88,6 +88,7 @@ def statevector_probabilities(
     strategy: Strategy,
     prop: str = "pauling_en",
     tail_mode: str = "global",
+    tail_angles: tuple[float, float] | None = None,
 ) -> np.ndarray:
     """Build and exactly simulate the shared 10+2 feature map for one SMILES.
 
@@ -123,9 +124,11 @@ def statevector_probabilities(
         _apply_ry(state, angle, qubit)
 
     if assignment.tail_indices and tail_mode == "global":
-        tail = summarize_tail(assignment.mol, assignment.backbone_indices)
-        _apply_ry(state, tail.chemical_angle, N_BACKBONE)
-        _apply_ry(state, tail.structural_angle, N_BACKBONE + 1)
+        if tail_angles is None:
+            tail = summarize_tail(assignment.mol, assignment.backbone_indices)
+            tail_angles = (tail.chemical_angle, tail.structural_angle)
+        _apply_ry(state, float(tail_angles[0]), N_BACKBONE)
+        _apply_ry(state, float(tail_angles[1]), N_BACKBONE + 1)
     elif assignment.tail_indices and tail_mode == "sum":
         for indices, qubit in ((assignment.tail_indices[0::2], N_BACKBONE),
                                (assignment.tail_indices[1::2], N_BACKBONE + 1)):
