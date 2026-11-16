@@ -13,6 +13,7 @@ from .composite_descriptor import compute_composite_bbb_angles
 from .capacity_analysis import backbone_retention_profile, dataset_backbone_summary
 from .backbone_selection import BackboneSelection, select_backbone_atoms
 from .tail_summaries import TailSummary, summarize_tail
+from .graph_pooling import PooledMolecule, gate_operations, pool_molecule
 
 def encode_molecule(
     smiles: str,
@@ -62,6 +63,18 @@ def encode_molecule(
     return qc, assignment
 
 
+def encode_graph_pooled_molecule(smiles: str):
+    """Build the experimental connected-fragment 10+2 molecular embedding.
+
+    Unlike :func:`encode_molecule`, backbone wires represent pooled connected
+    atom clusters rather than individual selected atoms. The original encoder
+    remains the default and is unchanged.
+    """
+    from .graph_pooling import build_graph_pooled_circuit
+
+    return build_graph_pooled_circuit(smiles)
+
+
 def __getattr__(name):
     """Lazily expose the optional Qiskit circuit builder."""
     if name == "build_circuit":
@@ -75,4 +88,6 @@ __all__ = [
     "preprocess_smiles", "compute_composite_bbb_angles",
     "backbone_retention_profile", "dataset_backbone_summary",
     "BackboneSelection", "select_backbone_atoms", "TailSummary", "summarize_tail",
+    "PooledMolecule", "pool_molecule", "gate_operations",
+    "encode_graph_pooled_molecule",
 ]

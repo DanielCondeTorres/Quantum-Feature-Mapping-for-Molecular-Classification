@@ -164,30 +164,30 @@ Used to identify bridgehead atoms connecting molecular subgraphs.
 
 ### 1.5 What the literature suggests improving — and what is actually implemented
 
-The current method and the proposed research direction are **not the same
-embedding**. Earlier work in this repository implemented and tested the
-greedy atom selector, the two global tail summaries, and the already available
-`prop`/`tail_mode` alternatives. It did **not** implement graph pooling,
-multi-feature atom registers, bond-feature-conditioned gates, or data
-re-uploading. The results above are ablations of existing options, not a test
-of the improved design proposed below.
+The earlier implementation and the new experiment are **different encodings**.
+The original default continues to select ten individual atoms and uses one
+scalar `Ry` per atom plus bond-order `Rxx` gates and a two-scalar tail. The
+literature-motivated alternative is now implemented as an opt-in prototype in
+`graph_pooling.py`; it does not replace the default `encode_molecule` path.
 
-| Component | Current implementation | Bibliography-motivated next design |
+| Component | Existing default | New experimental `GRAPH_POOLED` map |
 |---|---|---|
-| Meaning of `q0–q9` | Ten selected individual heavy atoms (or all atoms if fewer than ten) | Ten chemically connected **graph clusters/supernodes**, each pooling the features of its member atoms; this is a change of representation, not another atom-ranking heuristic |
-| Atom encoding | One `Ry` per backbone atom; default angle $0.1\chi_i^2$. Other implemented scalar properties replace that angle. | A compact, fixed-scale atom-feature vector (element, formal charge, valence, aromatic/ring status, hybridization, H count, stereochemistry, donor/acceptor, TPSA/logP contribution), uploaded in two or a few shallow, non-commuting rotations |
-| Bond encoding | One `Rxx` with angle equal to bond order divided by two | Encode bond type plus aromaticity, conjugation, ring membership, and stereo in edge-conditioned interactions |
-| Tail | Two fixed scalar summaries: chemistry on `q10`, topology/interface on `q11`; tail--tail bonds are not individually represented | Pool tail atom/edge attributes before uploading them through the same two qubits in a few shallow channels; quantify the information lost by this compression |
-| Ordering symmetry | Canonical parsing makes selection deterministic, but the circuit and its 4,096 output coordinates are still tied to labeled qubit positions | Use shared graph operations plus invariant pooling, or explicitly symmetrize/average over equivalent atom labelings; verify with randomized-SMILES invariance tests |
+| Meaning of `q0–q9` | Up to ten individually selected heavy atoms | Up to ten connected clusters/supernodes; all heavy atoms belong to a cluster |
+| Atom encoding | One `Ry` per atom; by default angle $0.1\chi_i^2$ | Pooled cluster descriptors: element family, charge, donor/acceptor, aromatic/ring fractions, TPSA/logP, stereochemistry, cluster size, internal-bond density; projected to two blocks of non-commuting `RX/RY/RZ` rotations |
+| Bond encoding | One `Rxx` per represented bond with angle `bond_order/2` | Quotient-graph edges aggregate bond order and aromatic/conjugated/ring character; encoded with `RXX` and `RZZ` |
+| `q10–q11` | Chemical and structural summaries of atoms outside the backbone | Whole-molecule chemical and topological context (size, polarity, HBD/HBA, edge/ring/cycle counts and pooled boundary fraction); these are context channels, not a residual-atom tail |
+| SMILES traversal | Canonical atom selection, but labeled qubit coordinates remain part of the feature vector | Canonical graph construction; exact gate sequences were unchanged in 1,000 randomized-SMILES checks on the benchmark sample |
 
 This direction follows the molecular-graph literature's use of **atom and
 bond attributes with permutation-invariant aggregation**, rather than relying
 on a single scalar per atom ([Gilmer et al., 2017](https://proceedings.mlr.press/v70/gilmer17a.html)).
-For a fixed 12-qubit budget, the most meaningful change would be to let each
-backbone wire represent a chemically connected pooled fragment, rather than
-calling one atom a proxy for an entire local environment. Molecular pooling
-methods such as [MESPool](https://pmc.ncbi.nlm.nih.gov/articles/PMC10753536/)
-motivate preserving connected chemical substructures during compression.
+For a fixed 12-qubit budget, the prototype lets each backbone wire represent a
+chemically connected pooled fragment, rather than using one atom as a proxy
+for a local environment. Molecular pooling methods such as
+[MESPool](https://pmc.ncbi.nlm.nih.gov/articles/PMC10753536/) motivate
+preserving connected chemical substructures during compression. The cluster
+merge rule is still a hand-designed, label-free heuristic; it is not MESPool
+and is not a learned pooling method.
 
 On the quantum side, [QMSE](https://arxiv.org/abs/2507.20422) encodes molecular
 bond orders and interatomic couplings as one- and two-qubit rotations, while
@@ -203,37 +203,62 @@ More depth is not automatically better: expressive embeddings, entanglement,
 global measurements, and noise can concentrate quantum kernels and make them
 harder to estimate ([Thanasilp et al., 2024](https://doi.org/10.1038/s41467-024-49287-w)).
 
-#### Recommended 10+2 research variant (proposed, not implemented)
+#### Prototype design and current performance
 
-1. Construct an attributed molecular graph with fixed, documented atom and
-   bond features. Use fixed chemical scales or fit normalization only inside
-   each training fold; do not rescale each molecule independently when an
-   angle is intended to have the same chemical meaning across molecules.
-2. Coarsen the graph into up to ten **connected** fragments, prioritizing
-   retention of functional groups, stereocentres, ring systems, and
-   backbone--tail boundary bonds. Store the atom-to-fragment mapping so the
-   compression can be audited. If fewer than ten fragments exist, leave the
-   remaining backbone wires idle rather than inventing pseudo-atoms.
-3. Encode a small number of pooled node channels on each backbone wire using
-   shallow interleaved rotations, and encode the coarsened fragment edges
-   using gates conditioned on bond features. Keep the two tail wires for
-   global residual chemistry and residual connectivity.
-4. Verify that changing the input SMILES traversal does not change the
-   representation (or report the variance if an ensemble approximation is
-   used). Measure represented atom/edge/functional-group coverage and
-   collision rates alongside ML metrics.
-5. Compare the proposed model against current `CHEMICAL_COVERAGE`,
-   `SMILES_ORDER`, ECFP4/RDKit descriptors, and a small classical graph model
-   on identical splits. Tune all learned scales and SVM parameters inside
-   nested training folds; report scaffold-separated evaluation as well as
-   random splits. Assess circuit depth, shot noise, and kernel spectrum before
-   claiming an improvement.
+The prototype was evaluated on the same balanced 250-molecule BBBP sample,
+ten stratified 75/25 splits, 4,096 exact statevector probabilities, and
+`StandardScaler + RBF-SVC (C=10)`. We also selected `C` from
+`{0.1, 1, 10, 100, 1000}` using three-fold CV **inside each outer training
+fold**. The atom-selected TPSA comparator uses the best existing property from
+the earlier ablation.
 
-The rationale is higher information content per wire and a graph-level
-inductive bias—not a promise of higher accuracy or quantum advantage. The
-literature establishes useful design principles, while the current BBBP
-results show that none of the already implemented scalar-property/tail
-variants has yet beaten the source-SMILES control in this experiment.
+| Representation | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| Source-SMILES order, fixed $C=10$ | 0.781 ± 0.053 | 0.772 ± 0.060 | 0.844 ± 0.043 |
+| `CHEMICAL_COVERAGE` + `tpsa_contrib`, fixed $C=10$ | 0.706 ± 0.058 | 0.678 ± 0.069 | 0.727 ± 0.063 |
+| `GRAPH_POOLED`, fixed $C=10$ | 0.510 ± 0.048 | 0.444 ± 0.058 | 0.536 ± 0.060 |
+| Source-SMILES order, nested $C$ | 0.781 ± 0.034 | 0.771 ± 0.044 | 0.873 ± 0.038 |
+| `CHEMICAL_COVERAGE` + TPSA, nested $C$ | 0.703 ± 0.061 | 0.674 ± 0.065 | 0.750 ± 0.076 |
+| `GRAPH_POOLED`, nested $C$ | 0.486 ± 0.037 | 0.403 ± 0.244 | 0.530 ± 0.058 |
+
+This first graph-pooling design **does not improve BBBP prediction**; it is
+near chance and remains substantially below both controls, including after
+leakage-safe tuning of $C$. This is evidence against this particular
+coarsening/feature projection/circuit, not against graph pooling in general.
+The result is a small-sample, random-split ablation rather than a significance
+test or scaffold-generalization result. The exact statevector was simulated
+with NumPy because Qiskit was unavailable, so this prototype has not been
+validated against Qiskit's simulator or hardware. The graph feature-map
+references motivate the design but do not predict its performance on BBBP.
+
+Reproduce with `python run_graph_pooling_comparison.py`. The script also
+checks four alternate SMILES traversals for each of the 250 molecules (1,000
+checks total); all produced identical canonical pooled gate sequences. The
+per-split metrics, selected inner-fold $C$ values, and run settings are stored
+in `graph_pooling_comparison_per_split.csv`,
+`graph_pooling_comparison_summary.csv`, and
+`graph_pooling_comparison_settings.json`.
+
+The graph-pooled path is opt-in. For inspection without Qiskit, use
+`pool_molecule` and `gate_operations`; to build a measured circuit, install
+Qiskit and call `encode_graph_pooled_molecule`. Molecules with more than ten
+disconnected heavy-atom components are rejected rather than silently joining
+unrelated components; salt/mixture handling should therefore happen in the
+usual preprocessing step first.
+
+```python
+from molecular_encoding import (
+    encode_graph_pooled_molecule,
+    gate_operations,
+    pool_molecule,
+)
+
+pooled = pool_molecule("CC(=O)Nc1ccccc1")
+print(pooled.clusters)                 # connected atom-index groups
+print(gate_operations(pooled))         # deterministic 12-qubit gate list
+# Optional circuit construction (requires Qiskit):
+# circuit, metadata = encode_graph_pooled_molecule("CC(=O)Nc1ccccc1")
+```
 
 #### References
 
@@ -260,11 +285,17 @@ molecular_encoding/
 ├── circuit_builder.py    # QuantumCircuit construction with uncoupled tail fix
 ├── collision_analysis.py # Fingerprinting & collision detection across datasets
 ├── capacity_analysis.py  # Quantifies loss from the fixed ten-atom backbone
+├── graph_pooling.py      # Experimental connected-fragment 10+2 feature map
 ├── visualization.py      # Molecular graph and circuit heatmap plotting
 ├── composite_descriptor.py # BBB-oriented composite pharmacophore angle
 └── tests/
-    └── test_atom_selection.py
+    ├── test_atom_selection.py
+    └── test_graph_pooling.py
 ```
+
+The root-level `run_graph_pooling_comparison.py` reproduces the controlled
+baseline comparison and writes split-level metrics and settings alongside
+the module.
 
 ### Capacity and collision reporting
 
