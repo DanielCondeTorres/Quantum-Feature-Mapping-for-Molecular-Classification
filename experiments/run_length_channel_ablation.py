@@ -13,21 +13,14 @@ rotations, bond gates, readout, folds, classifier) is unchanged.
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedShuffleSplit
 
-from experiments.common import (
-    evaluate_nested_c,
-    evaluate_svm,
-    prepare_unique_balanced_data,
-    statevector_features,
-)
+from experiments.data import prepare_unique_balanced_data
+from experiments.evaluation import evaluate_nested_c, evaluate_svm, summarize_fold_metrics
+from experiments.harness import BenchmarkConfig
 from molecular_encoding.chemistry.atom_selection import Strategy
+from molecular_encoding.quantum.simulator import statevector_features
 
 # (label, atomic property, size channel, blend weight)
 ARMS = (
@@ -41,22 +34,14 @@ ARMS = (
 )
 
 
-def run_comparison(
-    dataset: Path,
-    per_class: int = 125,
-    n_splits: int = 10,
-    test_size: float = 0.25,
-    seed: int = 42,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def run_comparison(config: BenchmarkConfig):
     """Compare the length-channel arms on the shared BBBP folds."""
-    data, data_info = prepare_unique_balanced_data(dataset, per_class, seed)
+    data, data_info = prepare_unique_balanced_data(
+        config.dataset, config.per_class, config.seed
+    )
     y = data["p_np"].to_numpy()
     smiles = data["smiles"].astype(str).tolist()
-    splits = list(
-        StratifiedShuffleSplit(
-            n_splits=n_splits, test_size=test_size, random_state=seed
-        ).split(np.zeros(len(y)), y)
-    )
+    splits = config.splits(y)
 
     records = []
     for name, prop, size_channel, size_weight in ARMS:
@@ -69,62 +54,40 @@ def run_comparison(
             for item in smiles
         ])
         records.extend(evaluate_svm(features, y, splits, f"{name}__fixed_C10"))
-        records.extend(evaluate_nested_c(features, y, splits, seed, f"{name}__nested_C"))
+        records.extend(evaluate_nested_c(features, y, splits, config.seed, f"{name}__nested_C"))
 
     fold_metrics = pd.DataFrame(records)
-    summary_rows = []
-    for method, group in fold_metrics.groupby("method", sort=False):
-        row = {"method": method}
-        for metric in ("accuracy", "f1", "auc_roc"):
-            row[f"{metric}_mean"] = float(group[metric].mean())
-            row[f"{metric}_std"] = float(group[metric].std(ddof=1))
-        summary_rows.append(row)
-    summary = pd.DataFrame(summary_rows)
-
+    summary = summarize_fold_metrics(fold_metrics)
     settings = {
         **data_info,
-        "dataset": str(dataset),
-        "per_class": per_class,
-        "n_splits": n_splits,
-        "test_size": test_size,
-        "seed": seed,
-        "selector": Strategy.CHEMICAL_COVERAGE.value,
-        "readout": "z_zz (78 Pauli moments)",
-        "arms": [
-            {"method": name, "prop": prop, "size_channel": channel,
-             "size_weight": weight}
-            for name, prop, channel, weight in ARMS
-        ],
-        "classifier_fixed": "StandardScaler + SVC(RBF, C=10)",
-        "classifier_nested": "C chosen from {0.1, 1, 10, 100, 1000} by 3-fold AUC inside each training split",
+        **config.settings(
+            selector=Strategy.CHEMICAL_COVERAGE.value,
+            readout="z_zz (78 Pauli moments)",
+            arms=[
+                {"method": name, "prop": prop, "size_channel": channel,
+                 "size_weight": weight}
+                for name, prop, channel, weight in ARMS
+            ],
+            classifier_fixed="StandardScaler + SVC(RBF, C=10)",
+            classifier_nested="C chosen from {0.1, 1, 10, 100, 1000} by 3-fold AUC inside each training split",
+        ),
     }
     return fold_metrics, summary, settings
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", type=Path, default=Path("BBBP.csv"))
-    parser.add_argument("--per-class", type=int, default=125)
-    parser.add_argument("--splits", type=int, default=10)
-    parser.add_argument("--test-size", type=float, default=0.25)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=Path, default=Path("molecular_encoding/results"))
-    args = parser.parse_args()
-
-    fold_metrics, summary, settings = run_comparison(
-        args.dataset, args.per_class, args.splits, args.test_size, args.seed
+    config = BenchmarkConfig.from_args(__doc__)
+    fold_metrics, summary, settings = run_comparison(config)
+    paths = config.save(
+        "length_channel",
+        fold_metrics=fold_metrics,
+        summary=summary,
+        settings=settings,
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    fold_metrics.to_csv(args.output_dir / "length_channel_per_split.csv", index=False)
-    summary.to_csv(args.output_dir / "length_channel_summary.csv", index=False)
-    (args.output_dir / "length_channel_settings.json").write_text(
-        json.dumps(settings, indent=2) + "\n"
-    )
-    print("\nLength-channel results (mean ± sample SD over ten splits):")
     columns = ["method", "accuracy_mean", "accuracy_std", "auc_roc_mean", "auc_roc_std"]
+    print("\nLength-channel results (mean ± sample SD over ten splits):")
     print(summary[columns].to_string(index=False, float_format=lambda v: f"{v:.4f}"))
-    print(f"\nSaved: length_channel_per_split.csv, length_channel_summary.csv, "
-          "length_channel_settings.json")
+    print(f"\nSaved: {', '.join(str(path) for path in paths)}")
 
 
 if __name__ == "__main__":

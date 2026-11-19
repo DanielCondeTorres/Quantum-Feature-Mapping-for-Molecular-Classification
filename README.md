@@ -47,11 +47,13 @@ the method README.
 ├── molecular_encoding/
 │   ├── chemistry/        # RDKit cleaning, selection, atom properties, tail
 │   ├── graph/            # Attributed molecular graph and optional pooling
-│   ├── quantum/          # Circuit construction and Zi/ZiZj readout
+│   ├── quantum/          # Circuit, simulator, Zi/ZiZj readout and alternative
+│   │                     #   quantum algorithms (kernel, Pauli, re-uploading)
 │   ├── analysis/         # Collision, capacity, PCA and plotting tools
 │   ├── results/          # Reproducible CSV results and JSON configurations
 │   └── tests/            # Unit and invariance tests
 ├── docs/
+│   └── DEVELOPMENT.md    # Layer structure and how to add an experiment
 │   ├── assets/           # README figures, including the encoding visual abstract
 │   └── generate_encoding_visual.py
 ├── experiments/          # Shared tools and reproducible benchmark entry points

@@ -18,24 +18,17 @@ inner CV selects C=0.1 and the held-out predictions collapse to one class
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedShuffleSplit
+from rdkit import RDLogger
 
-from experiments.common import (
-    DEFAULT_READOUT,
-    evaluate_nested_c,
-    evaluate_svm,
-    prepare_unique_balanced_data,
-    statevector_features,
-)
+from experiments.data import prepare_unique_balanced_data
+from experiments.evaluation import evaluate_nested_c, evaluate_svm, summarize_fold_metrics
+from experiments.harness import BenchmarkConfig
 from molecular_encoding.analysis.capacity_analysis import backbone_connectivity_summary
 from molecular_encoding.chemistry.atom_selection import Strategy
-from rdkit import RDLogger
+from molecular_encoding.quantum.readout import DEFAULT_READOUT
+from molecular_encoding.quantum.simulator import statevector_features
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -50,22 +43,14 @@ ARMS = (
 )
 
 
-def run_comparison(
-    dataset: Path,
-    per_class: int = 125,
-    n_splits: int = 10,
-    test_size: float = 0.25,
-    seed: int = 42,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+def run_comparison(config: BenchmarkConfig):
     """Score the connected-core map on the same folds as the SMILES control."""
-    data, data_info = prepare_unique_balanced_data(dataset, per_class, seed)
+    data, data_info = prepare_unique_balanced_data(
+        config.dataset, config.per_class, config.seed
+    )
     y = data["p_np"].to_numpy()
     smiles = data["smiles"].astype(str).tolist()
-    splits = list(
-        StratifiedShuffleSplit(
-            n_splits=n_splits, test_size=test_size, random_state=seed
-        ).split(np.zeros(len(y)), y)
-    )
+    splits = config.splits(y)
     connectivity = backbone_connectivity_summary(
         smiles,
         strategies=(
@@ -84,62 +69,40 @@ def run_comparison(
             for item in smiles
         ])
         records.extend(evaluate_svm(features, y, splits, f"{name}__fixed_C10"))
-        records.extend(evaluate_nested_c(features, y, splits, seed, f"{name}__nested_C"))
+        records.extend(evaluate_nested_c(features, y, splits, config.seed, f"{name}__nested_C"))
 
     fold_metrics = pd.DataFrame(records)
-    summary_rows = []
-    for method, group in fold_metrics.groupby("method", sort=False):
-        row = {"method": method}
-        for metric in ("accuracy", "f1", "auc_roc"):
-            row[f"{metric}_mean"] = float(group[metric].mean())
-            row[f"{metric}_std"] = float(group[metric].std(ddof=1))
-        summary_rows.append(row)
-    summary = pd.DataFrame(summary_rows)
+    summary = summarize_fold_metrics(fold_metrics)
     settings = {
         **data_info,
-        "dataset": str(dataset),
-        "per_class": per_class,
-        "n_splits": n_splits,
-        "test_size": test_size,
-        "seed": seed,
-        "readout": DEFAULT_READOUT,
-        "arms": [
-            {"method": name, "strategy": strategy.value, "prop": prop, "tail_mode": tail_mode}
-            for name, strategy, prop, tail_mode in ARMS
-        ],
-        "classifier_fixed": "StandardScaler + SVC(RBF, C=10)",
-        "classifier_nested": "C chosen from {0.1, 1, 10, 100, 1000} by 3-fold AUC inside each training split",
+        **config.settings(
+            readout=DEFAULT_READOUT,
+            arms=[
+                {"method": name, "strategy": strategy.value, "prop": prop, "tail_mode": tail_mode}
+                for name, strategy, prop, tail_mode in ARMS
+            ],
+            classifier_fixed="StandardScaler + SVC(RBF, C=10)",
+            classifier_nested="C chosen from {0.1, 1, 10, 100, 1000} by 3-fold AUC inside each training split",
+        ),
     }
     return fold_metrics, summary, connectivity, settings
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", type=Path, default=Path("BBBP.csv"))
-    parser.add_argument("--per-class", type=int, default=125)
-    parser.add_argument("--splits", type=int, default=10)
-    parser.add_argument("--test-size", type=float, default=0.25)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=Path, default=Path("molecular_encoding/results"))
-    args = parser.parse_args()
-
-    fold_metrics, summary, connectivity, settings = run_comparison(
-        args.dataset, args.per_class, args.splits, args.test_size, args.seed
+    config = BenchmarkConfig.from_args(__doc__)
+    fold_metrics, summary, connectivity, settings = run_comparison(config)
+    paths = config.save(
+        "connected_core",
+        fold_metrics=fold_metrics,
+        summary=summary,
+        settings=settings,
+        extra={"connectivity": connectivity},
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    fold_path = args.output_dir / "connected_core_per_split.csv"
-    summary_path = args.output_dir / "connected_core_summary.csv"
-    connectivity_path = args.output_dir / "connected_core_connectivity.csv"
-    settings_path = args.output_dir / "connected_core_settings.json"
-    fold_metrics.to_csv(fold_path, index=False)
-    summary.to_csv(summary_path, index=False)
-    connectivity.to_csv(connectivity_path, index=False)
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
     print("\nConnectivity of the ten-atom backbone:")
     print(connectivity.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
     print("\nPer-method metrics (mean ± sample SD):")
     print(summary.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
-    print(f"\nSaved: {fold_path}, {summary_path}, {connectivity_path}, {settings_path}")
+    print(f"\nSaved: {', '.join(str(path) for path in paths)}")
 
 
 if __name__ == "__main__":

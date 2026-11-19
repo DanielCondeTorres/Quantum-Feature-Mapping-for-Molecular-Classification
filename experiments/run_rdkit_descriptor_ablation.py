@@ -20,10 +20,6 @@ script does not change the quantum embedding or the molecular encoding.
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from rdkit import Chem, RDLogger
@@ -31,19 +27,16 @@ from rdkit.Chem import Crippen, rdMolDescriptors
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
-from sklearn.model_selection import StratifiedShuffleSplit
 
-from experiments.common import (
-    evaluate_nested_c,
-    evaluate_svm,
-    prepare_unique_balanced_data,
-    statevector_features,
-)
+from experiments.data import prepare_unique_balanced_data
+from experiments.evaluation import evaluate_nested_c, evaluate_svm, summarize_fold_metrics
+from experiments.harness import BenchmarkConfig
 from molecular_encoding.analysis.pca_features import (
     DESCRIPTOR_NAMES,
     molecular_descriptor_matrix,
 )
 from molecular_encoding.chemistry.atom_selection import Strategy
+from molecular_encoding.quantum.simulator import statevector_features
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -135,32 +128,24 @@ def _forest_importance(x: np.ndarray, y: np.ndarray, splits, seed: int):
     return metric_rows, pd.DataFrame(importance_rows)
 
 
-def run_comparison(
-    dataset: Path,
-    per_class: int = 125,
-    n_splits: int = 10,
-    test_size: float = 0.25,
-    seed: int = 42,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+def run_comparison(config: BenchmarkConfig):
     """Score each descriptor alone, all together, and a quantum reference."""
-    data, data_info = prepare_unique_balanced_data(dataset, per_class, seed)
+    data, data_info = prepare_unique_balanced_data(
+        config.dataset, config.per_class, config.seed
+    )
     y = data["p_np"].to_numpy()
     smiles = data["smiles"].astype(str).tolist()
     x = descriptor_matrix(smiles)
-    splits = list(
-        StratifiedShuffleSplit(
-            n_splits=n_splits, test_size=test_size, random_state=seed
-        ).split(x, y)
-    )
+    splits = config.splits(y)
 
     records = []
     for column, name in enumerate(ALL_DESCRIPTORS):
         single = x[:, [column]]
         records.extend(evaluate_svm(single, y, splits, f"{name}__fixed_C10"))
-        records.extend(evaluate_nested_c(single, y, splits, seed, f"{name}__nested_C"))
+        records.extend(evaluate_nested_c(single, y, splits, config.seed, f"{name}__nested_C"))
 
     records.extend(evaluate_svm(x, y, splits, "ALL_DESCRIPTORS__fixed_C10"))
-    records.extend(evaluate_nested_c(x, y, splits, seed, "ALL_DESCRIPTORS__nested_C"))
+    records.extend(evaluate_nested_c(x, y, splits, config.seed, "ALL_DESCRIPTORS__nested_C"))
 
     for prop in ("pauling_en", "tpsa_contrib"):
         quantum = np.stack([
@@ -171,20 +156,12 @@ def run_comparison(
         ])
         label = f"QUANTUM_78_chemcov_{prop}"
         records.extend(evaluate_svm(quantum, y, splits, f"{label}__fixed_C10"))
-        records.extend(evaluate_nested_c(quantum, y, splits, seed, f"{label}__nested_C"))
+        records.extend(evaluate_nested_c(quantum, y, splits, config.seed, f"{label}__nested_C"))
 
-    forest_records, importance_folds = _forest_importance(x, y, splits, seed)
+    forest_records, importance_folds = _forest_importance(x, y, splits, config.seed)
     records.extend(forest_records)
     fold_metrics = pd.DataFrame(records)
-
-    summary_rows = []
-    for method, group in fold_metrics.groupby("method", sort=False):
-        row = {"method": method}
-        for metric in ("accuracy", "f1", "auc_roc"):
-            row[f"{metric}_mean"] = float(group[metric].mean())
-            row[f"{metric}_std"] = float(group[metric].std(ddof=1))
-        summary_rows.append(row)
-    summary = pd.DataFrame(summary_rows)
+    summary = summarize_fold_metrics(fold_metrics)
 
     importance = (
         importance_folds.groupby("descriptor", sort=False)
@@ -200,14 +177,11 @@ def run_comparison(
 
     settings = {
         **data_info,
-        "dataset": str(dataset),
-        "per_class": per_class,
-        "n_splits": n_splits,
-        "test_size": test_size,
-        "seed": seed,
-        "descriptors": list(ALL_DESCRIPTORS),
-        "classifier_univariate": "StandardScaler + SVC(RBF, C=10) and nested C",
-        "classifier_forest": "RandomForest(300 trees); AUC permutation importance, 10 repeats on held-out folds",
+        **config.settings(
+            descriptors=list(ALL_DESCRIPTORS),
+            classifier_univariate="StandardScaler + SVC(RBF, C=10) and nested C",
+            classifier_forest="RandomForest(300 trees); AUC permutation importance, 10 repeats on held-out folds",
+        ),
     }
     return (
         fold_metrics,
@@ -219,29 +193,14 @@ def run_comparison(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", type=Path, default=Path("BBBP.csv"))
-    parser.add_argument("--per-class", type=int, default=125)
-    parser.add_argument("--splits", type=int, default=10)
-    parser.add_argument("--test-size", type=float, default=0.25)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=Path, default=Path("molecular_encoding/results"))
-    args = parser.parse_args()
-
-    fold_metrics, summary, importance, correlations, settings = run_comparison(
-        args.dataset, args.per_class, args.splits, args.test_size, args.seed
-    )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    files = {
-        "rdkit_descriptor_per_split.csv": fold_metrics,
-        "rdkit_descriptor_summary.csv": summary,
-        "rdkit_descriptor_importance.csv": importance,
-        "rdkit_descriptor_correlations.csv": correlations,
-    }
-    for name, frame in files.items():
-        frame.to_csv(args.output_dir / name, index=False)
-    (args.output_dir / "rdkit_descriptor_settings.json").write_text(
-        json.dumps(settings, indent=2) + "\n"
+    config = BenchmarkConfig.from_args(__doc__)
+    fold_metrics, summary, importance, correlations, settings = run_comparison(config)
+    paths = config.save(
+        "rdkit_descriptor",
+        fold_metrics=fold_metrics,
+        summary=summary,
+        settings=settings,
+        extra={"importance": importance, "correlations": correlations},
     )
 
     print("\nUnivariate accuracy / AUC (mean ± sample SD over ten splits):")
@@ -251,7 +210,7 @@ def main() -> None:
     print(importance.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
     print("\nTraining-fold correlation with the BBBP label:")
     print(correlations.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
-    print(f"\nSaved: {', '.join(files)}, rdkit_descriptor_settings.json")
+    print(f"\nSaved: {', '.join(str(path) for path in paths)}")
 
 
 if __name__ == "__main__":

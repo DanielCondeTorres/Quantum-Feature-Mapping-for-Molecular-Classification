@@ -936,6 +936,70 @@ same coordinate; the chemistry-aware selector derives the order from the
 molecular graph and is invariant to the input string. The randomized-SMILES
 test (167/248 flips versus 0/248) measures precisely this difference.
 
+#### Alternative quantum feature algorithms (`quantum_algorithms`)
+
+The default embedding measures only Z-basis moments of a single-layer state.
+`molecular_encoding/quantum/quantum_algorithms.py` is a **separate, opt-in**
+module with three feature extractors that use more of the quantum state and
+then hand ordinary vectors (or a kernel matrix) to a classical classifier:
+
+1. **`fidelity_kernel(states)`** builds `K_ij = |⟨ψ_i|ψ_j⟩|²` from the full
+   complex states (amplitudes *and* phases), then `SVC(kernel="precomputed")`
+   learns from it. This is a different learning algorithm, not another readout:
+   it works in the 4096-dimensional Hilbert space that the quantum state
+   represents natively. This is the route most likely to show a genuine
+   quantum advantage, provided the states are prepared on hardware.
+2. **`pauli_feature_matrix(states)`** returns expectations of X, Y and Z Pauli
+   strings on single qubits and pairs (300 features by default). Z and ZZ are
+   what the standard readout captures; X/Y moments are sensitive to phases
+   that computational-basis measurement throws away.
+3. **`reupload_features(..., layers=2|3)`** repeats the same data-encoding
+   block before readout, increasing the accessible function frequencies of the
+   feature map without adding qubits. `layers=1` is exactly the default map.
+
+```python
+from molecular_encoding.quantum.quantum_algorithms import (
+    encode_states, fidelity_kernel, pauli_feature_matrix, reupload_features,
+)
+from molecular_encoding.chemistry.atom_selection import Strategy
+
+states = encode_states(smiles, Strategy.CHEMICAL_COVERAGE, prop="pauling_en")
+kernel = fidelity_kernel(states)                 # for SVC(kernel="precomputed")
+pauli, names = pauli_feature_matrix(states)      # phase-sensitive features
+reuploaded = reupload_features(smiles, Strategy.CHEMICAL_COVERAGE, layers=2)
+```
+
+`python -m experiments.run_quantum_algorithm_comparison` evaluates all three
+on the shared folds (chemical-coverage selector, Pauling angles, 78-moment
+baseline; mean ± sample SD over ten splits):
+
+| Representation | Acc, C=10 | AUC, C=10 | Acc, nested C | AUC, nested C |
+|---|---:|---:|---:|---:|
+| Baseline 78 Z moments | 0.632 | 0.697 | 0.625 | 0.702 |
+| **Pauli X/Y/Z + pairs (300 features)** | **0.703** | **0.746** | 0.676 | **0.761** |
+| Fidelity kernel (SVC precomputed) | 0.662 | 0.710 | 0.670 | 0.731 |
+| Re-uploading, 2 layers | 0.657 | 0.697 | 0.640 | 0.725 |
+| Re-uploading, 3 layers | 0.641 | 0.684 | 0.659 | 0.714 |
+
+**Reading:** enriching the readout with phase-sensitive Pauli expectations is
+the only alternative that clearly beats the default Z-moment vector: fixed-$C$
+accuracy rises from 0.632 to 0.703 and AUC from 0.697 to 0.746; with nested
+$C$ it reaches AUC 0.761, close to the 0.767 of a random forest on raw RDKit
+descriptors. This supports the motivation for the module: the standard
+computational-basis readout discards phase information that X/Y moments
+recover. The fidelity kernel also helps versus baseline but less, and two or
+three re-upload layers do not improve on this small sample. These are ten
+correlated random splits on 250 molecules, so the ranking is exploratory and
+needs scaffold-held-out confirmation; the classical RF on RDKit descriptors
+still has the best AUC here.
+
+These are exact NumPy simulations, so they demonstrate **statistical**
+behaviour only; a computational speedup would require preparing states on
+hardware. Outputs are
+`results/quantum_algorithms_{per_split,summary,settings}.csv/json`. See
+[`docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) for the module layout and the
+conventions for adding experiments.
+
 #### References
 
 - Gilmer, J. et al. (2017). [Neural Message Passing for Quantum Chemistry](https://proceedings.mlr.press/v70/gilmer17a.html). *ICML / PMLR 70*, 1263–1272.
