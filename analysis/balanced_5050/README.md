@@ -82,6 +82,32 @@ the first ten atom positions** on average, which is why the old "first ten
 atoms" encoding changes completely. This is provenance (different sources with
 different conventions), not chemistry.
 
+### Causal confirmation (not just correlation)
+
+`python -m experiments.run_smiles_causality_test` runs three checks that rule
+out "it is real structure, not writing style" (`figures/smiles_causality.png`,
+`tables/smiles_*_contradiction.csv`, `smiles_cross_representation.csv`,
+`smiles_random_traversal.csv`):
+
+1. **Notation contradiction.** Restricting to molecules that RDKit *agrees*
+   are aromatic (so chemistry is held fixed), 98.1% of non-permeable source
+   strings use lowercase aromatic notation versus 28.6% of permeable ones.
+   The same aromatic chemistry is written two different ways depending on the
+   label — that is notation, not structure.
+2. **Cross-representation transfer.** The SMILES-order model scores 0.746
+   accuracy / 0.848 AUC when train and test use the same writing. Training on
+   source strings and testing on canonical strings of the *same* molecules
+   drops to 0.602 / 0.643; the reverse direction drops as well. If the model
+   had learned chemistry, the score would transfer.
+3. **Random traversals.** Rewriting each molecule into up to four different
+   valid SMILES flips at least one prediction for 76.2% of molecules (40.9% of
+   all variants) and drops accuracy to 0.560. Same molecule, same label,
+   different prediction.
+
+The three results together establish that the surviving advantage of the old
+technique comes from how the strings were written, not from molecular
+structure.
+
 ## Files
 
 - `tables/balanced_summary.csv`, `balanced_per_split.csv` — dataset 1.
