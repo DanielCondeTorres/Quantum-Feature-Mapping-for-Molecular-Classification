@@ -55,6 +55,7 @@ the method README.
 ├── docs/
 │   ├── assets/           # README figures, including the BBBP EDA plots
 │   ├── DEVELOPMENT.md    # Layer structure and how to add an experiment
+│   ├── QUANTUM_FEATURES.md  # How quantum features are extracted, step by step
 │   └── generate_encoding_visual.py
 ├── analysis/
 │   └── bbbp_feature_audit/  # Molecules, RDKit features, plots and leakage audit

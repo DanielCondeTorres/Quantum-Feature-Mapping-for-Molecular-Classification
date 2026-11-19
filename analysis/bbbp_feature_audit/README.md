@@ -73,6 +73,32 @@ the high-TPSA region. A linear boundary on these two axes already captures
 most of the separation, which is why a simple classifier on a handful of
 descriptors approaches the quantum readouts.
 
+## Quantum features in two dimensions
+
+`python -m experiments.run_quantum_pca_audit` applies the same red/blue
+treatment to the quantum representations. Each feature matrix is z-scored
+before PCA (the fidelity kernel is already a normalized Gram matrix, so it
+uses kernel PCA instead). See
+[`docs/QUANTUM_FEATURES.md`](../../docs/QUANTUM_FEATURES.md) for how these
+features are extracted.
+
+![PCA grid of quantum representations](figures/quantum_pca_grid.png)
+
+| Representation | PC1 variance | PC1 AUC | SVM on 2 dims: acc / AUC |
+|---|---:|---:|---:|
+| Z moments (78) | 41% | 0.654 | 0.567 / 0.575 |
+| Pauli X/Y/Z (300) | 25% | **0.701** | 0.649 / 0.689 |
+| Re-upload 2 layers | 19% | 0.606 | **0.678 / 0.722** |
+| Fidelity kernel | — | 0.684 | 0.603 / 0.651 |
+
+Two dimensions are not enough for the 78 Z moments (2D AUC 0.575, versus 0.697
+with all components): the separating information is spread over many
+components. The phase-sensitive Pauli features give the best single-component
+separation, and re-uploading gives the best 2D classifier. Neither produces a
+clean visual split — the classes overlap in every projection — which is why
+the row-number leak looks so much stronger: it is not a genuine chemical
+boundary. Per-molecule coordinates are in `tables/quantum_pca_*.csv`.
+
 The best defensible chemistry-only model here is the random forest on the 13
 RDKit descriptors (mean AUC 0.742 with nested C). For a real performance
 claim, validate with scaffold-held-out folds as well.

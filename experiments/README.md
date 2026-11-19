@@ -18,6 +18,7 @@ python -m experiments.run_quantum_algorithm_comparison
 python -m experiments.run_raw_bbbp_eda
 python -m experiments.run_native_order_audit
 python -m experiments.run_bbbp_feature_audit
+python -m experiments.run_quantum_pca_audit
 python -m experiments.run_pca_bbbp_comparison
 ```
 

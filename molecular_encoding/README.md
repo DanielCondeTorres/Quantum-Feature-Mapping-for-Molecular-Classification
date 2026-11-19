@@ -941,7 +941,9 @@ test (167/248 flips versus 0/248) measures precisely this difference.
 The default embedding measures only Z-basis moments of a single-layer state.
 `molecular_encoding/quantum/quantum_algorithms.py` is a **separate, opt-in**
 module with three feature extractors that use more of the quantum state and
-then hand ordinary vectors (or a kernel matrix) to a classical classifier:
+then hand ordinary vectors (or a kernel matrix) to a classical classifier.
+See [`docs/QUANTUM_FEATURES.md`](../docs/QUANTUM_FEATURES.md) for the full
+step-by-step extraction pipeline and module layout:
 
 1. **`fidelity_kernel(states)`** builds `K_ij = |⟨ψ_i|ψ_j⟩|²` from the full
    complex states (amplitudes *and* phases), then `SVC(kernel="precomputed")`
