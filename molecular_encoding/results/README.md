@@ -20,6 +20,7 @@ root, e.g. `python -m experiments.run_selection_comparison`.
 | `length_channel_*` | Opt-in molecular-length channel blended into the q10 tail rotation, with weight and metric arms |
 | `quantum_algorithms_*` | Fidelity kernel, phase-sensitive Pauli features and data re-uploading versus the default Z-moment readout |
 | `bbbp_raw_*` | Descriptors, EDA summary and settings computed from the raw (unbalanced) BBBP CSV |
+| `native_order_audit_*` | Provenance-leakage audit: CSV row number versus descriptors and quantum features |
 | `pca_bbbp_*` | PCA-derived auxiliary-feature experiment |
 
 The CSV files are descriptive benchmark artifacts, not independent test sets;

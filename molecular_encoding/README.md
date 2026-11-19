@@ -1000,6 +1000,38 @@ hardware. Outputs are
 [`docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) for the module layout and the
 conventions for adding experiments.
 
+#### Audit: the native-order advantage is dataset provenance
+
+The historical SMILES-order control has repeatedly beaten chemistry-aware
+selectors and RDKit descriptors on this benchmark. To find out why,
+`experiments/run_native_order_audit.py` scores features on the **same** 250
+molecules and ten folds:
+
+| Feature | Acc, C=10 | AUC, C=10 | Acc, nested C | AUC, nested C |
+|---|---:|---:|---:|---:|
+| **CSV row number (`num`)** | **0.859** | **0.914** | **0.881** | **0.949** |
+| Position after the benchmark shuffle | 0.467 | 0.466 | 0.462 | 0.464 |
+| SMILES length | 0.562 | 0.614 | 0.565 | 0.596 |
+| First character of source SMILES | 0.587 | 0.582 | 0.597 | 0.594 |
+| 13 RDKit descriptors | 0.675 | 0.738 | 0.694 | 0.743 |
+| Quantum 78 moments, SMILES order | 0.732 | 0.815 | 0.762 | 0.834 |
+| Quantum 78 moments, chemical coverage | 0.632 | 0.697 | 0.625 | 0.702 |
+
+The row number of the original CSV — a value with **no chemical meaning** — is
+by far the best single feature. The BBBP file is ordered: permeable molecules
+cluster toward the end, so `num` alone reaches AUC 0.914 (0.949 with nested
+C). The control that shuffles the same molecules collapses to chance (0.46),
+ruling out sample composition as the cause. The quantum SMILES-order arm
+(0.815) sits between the row-number leak and real chemistry (0.738 for
+descriptors, 0.697 for the chemistry-aware quantum map): it partly inherits
+the provenance signal because the source strings and the file order come from
+the same curation process. This is why a selector that looks "worse" is
+actually the more defensible representation: the higher score is not
+predictive chemistry. For any claim about BBBP performance, report a
+scaffold-held-out result and check that no provenance feature is available to
+the model. Reproduce with `python -m experiments.run_native_order_audit`;
+settings and per-split metrics are in `results/native_order_audit_*`.
+
 #### References
 
 - Gilmer, J. et al. (2017). [Neural Message Passing for Quantum Chemistry](https://proceedings.mlr.press/v70/gilmer17a.html). *ICML / PMLR 70*, 1263–1272.
