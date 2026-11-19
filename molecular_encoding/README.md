@@ -819,6 +819,77 @@ print(gate_operations(pooled))         # deterministic 12-qubit gate list
 # circuit, metadata = encode_graph_pooled_molecule("CC(=O)Nc1ccccc1")
 ```
 
+#### Which RDKit descriptors actually matter? (classical diagnostic)
+
+To interpret the chemical arms above, `experiments/run_rdkit_descriptor_ablation.py`
+scores interpretable molecule-level descriptors on the **same** balanced
+250-molecule sample and ten stratified splits. The first nine descriptors are
+exactly those used by the fold-fitted PCA experiment; four BBB-relevant extras
+(`RingCount`, `HeavyAtomCount`, `MolarRefractivity`, `NumHeteroatoms`) are
+added. This is a classical diagnostic: no quantum circuit is involved except
+in the two reference rows.
+
+Univariate RBF-SVM scores (accuracy and AUC, mean over ten splits) and the
+mean training-fold correlation with the BBBP label:
+
+| Descriptor | Acc, C=10 | AUC, C=10 | AUC, nested C | Corr with label |
+|---|---:|---:|---:|---:|
+| **TPSA** | **0.670** | **0.719** | **0.735** | **−0.425** |
+| NumHeteroatoms | 0.662 | 0.703 | 0.697 | −0.398 |
+| HBA | 0.646 | 0.687 | 0.682 | −0.367 |
+| HBD | 0.660 | 0.681 | 0.688 | −0.346 |
+| MolLogP | 0.621 | 0.678 | 0.674 | +0.258 |
+| MolWt | 0.600 | 0.635 | 0.624 | −0.254 |
+| RotB | 0.591 | 0.607 | 0.613 | −0.246 |
+| HeavyAtomCount | 0.589 | 0.601 | 0.605 | −0.218 |
+| MolarRefractivity | 0.522 | 0.544 | 0.524 | −0.147 |
+| FractionCSP3 | 0.529 | 0.528 | 0.511 | +0.030 |
+| AromaticRings | 0.530 | 0.527 | 0.534 | +0.053 |
+| RingCount | 0.502 | 0.518 | 0.510 | +0.054 |
+| FormalCharge | 0.487 | 0.495 | 0.495 | −0.034 |
+
+Aggregate and reference rows (same folds):
+
+| Representation | Acc, C=10 | AUC, C=10 | AUC, nested C |
+|---|---:|---:|---:|
+| All 13 descriptors, RBF-SVM | 0.675 | 0.738 | 0.743 |
+| All 13 descriptors, random forest | **0.703** | **0.767** | — |
+| Quantum 78 moments, chem. coverage + TPSA | 0.667 | 0.716 | 0.760 |
+| Quantum 78 moments, chem. coverage + Pauling | 0.632 | 0.697 | 0.702 |
+
+Random-forest permutation importance, measured on each held-out fold (top
+ranks; values are AUC drop when a descriptor is shuffled):
+
+| Rank | Descriptor | Importance | Rank | Descriptor | Importance |
+|---:|---|---:|---:|---|---:|
+| 1 | TPSA | 0.051 ± 0.022 | 5 | RingCount | 0.011 ± 0.014 |
+| 2 | RotB | 0.026 ± 0.015 | 6 | HBA | 0.006 ± 0.007 |
+| 3 | HBD | 0.015 ± 0.015 | 7 | HeavyAtomCount | 0.005 ± 0.009 |
+| 4 | NumHeteroatoms | 0.012 ± 0.012 | 8 | MolLogP | 0.005 ± 0.021 |
+
+**Reading:** TPSA is the single most determinant parameter. It has the best
+univariate score, the strongest (negative) label correlation — more polar
+surface, less BBB permeation — and roughly twice the permutation importance of
+the next descriptor. Polarity and hydrogen bonding (TPSA, HBD, HBA,
+heteroatom count) dominate; size and lipophilicity (MolWt, logP,
+refractivity) are much weaker individually. `RotB` is the notable case: weak
+alone but second in the forest, so flexibility carries conditional information
+that interacts with polarity. Formal charge and molar refractivity carry no
+usable signal on this sample.
+
+This also explains the quantum results: the best chemical quantum arm uses
+TPSA because TPSA is where the label signal is, and a random forest on the raw
+descriptors reaches AUC 0.767 versus 0.760 for the quantum 78-moment readout.
+On this small random-split sample the classical descriptors already capture
+the BBBP signal; no measurable quantum gain is observed. Correlations are
+computed on training folds and permutation importance on held-out folds, but
+thirteen descriptors were examined on the same small benchmark, so these
+ranks are descriptive and need scaffold-held-out confirmation before being
+treated as a stable chemical claim. Reproduce with
+`python -m experiments.run_rdkit_descriptor_ablation`; outputs are
+`results/rdkit_descriptor_{per_split,summary,importance,correlations}.csv` and
+`rdkit_descriptor_settings.json`.
+
 #### References
 
 - Gilmer, J. et al. (2017). [Neural Message Passing for Quantum Chemistry](https://proceedings.mlr.press/v70/gilmer17a.html). *ICML / PMLR 70*, 1263–1272.
