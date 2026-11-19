@@ -53,9 +53,11 @@ the method README.
 │   ├── results/          # Reproducible CSV results and JSON configurations
 │   └── tests/            # Unit and invariance tests
 ├── docs/
-│   └── DEVELOPMENT.md    # Layer structure and how to add an experiment
-│   ├── assets/           # README figures, including the encoding visual abstract
+│   ├── assets/           # README figures, including the BBBP EDA plots
+│   ├── DEVELOPMENT.md    # Layer structure and how to add an experiment
 │   └── generate_encoding_visual.py
+├── analysis/
+│   └── bbbp_feature_audit/  # Molecules, RDKit features, plots and leakage audit
 ├── experiments/          # Shared tools and reproducible benchmark entry points
 │   └── legacy/           # Qiskit-dependent historical reproduction scripts
 ├── BBBP.csv

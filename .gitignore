@@ -6,3 +6,4 @@ __pycache__/
 *.png
 !molecular_encoding/*.png
 !docs/assets/*.png
+!analysis/**/*.png
