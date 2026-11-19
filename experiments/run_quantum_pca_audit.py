@@ -133,6 +133,12 @@ def main() -> None:
         frame["dim2"] = coordinates[:, 1]
         slug = "".join(char if char.isalnum() else "_" for char in name.lower()).strip("_")
         frame.to_csv(TABLES / f"quantum_pca_{slug}.csv", index=False)
+        # Also save a standalone PNG per representation, not just the 2x2 grid.
+        single, single_ax = plt.subplots(figsize=(7, 6))
+        _plot(single_ax, coordinates, y, name, variance, metrics)
+        single.tight_layout()
+        single.savefig(FIGURES / f"quantum_pca_{slug}.png", dpi=160)
+        plt.close(single)
         rows.append({
             "representation": name,
             "var_dim1": variance[0], "var_dim2": variance[1],

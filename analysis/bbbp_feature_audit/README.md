@@ -84,6 +84,11 @@ features are extracted.
 
 ![PCA grid of quantum representations](figures/quantum_pca_grid.png)
 
+Individual versions: `figures/quantum_pca_z_moments__78.png`,
+`quantum_pca_pauli_x_y_z__300.png`, `quantum_pca_re_upload_2_layers.png` and
+`quantum_pca_fidelity_kernel.png`. In all of them red = permeable (`p_np=1`)
+and blue = non-permeable (`p_np=0`).
+
 | Representation | PC1 variance | PC1 AUC | SVM on 2 dims: acc / AUC |
 |---|---:|---:|---:|
 | Z moments (78) | 41% | 0.654 | 0.567 / 0.575 |
