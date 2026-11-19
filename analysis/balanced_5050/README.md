@@ -59,6 +59,29 @@ Note: canonicalization merges a few source-SMILES aliases of the same
 structure, so the canonical CSV is read directly (125/125 rows) rather than
 through the deduplication pipeline.
 
+## What exactly was wrong with the SMILES
+
+`python -m experiments.run_smiles_style_audit` measures the writing style of
+the source strings (results in `tables/smiles_style.csv` and
+`figures/smiles_style.png`):
+
+| Style flag | Non-permeable | Permeable | AUC |
+|---|---:|---:|---:|
+| Aromatic lowercase `c` | 83.2% | 24.0% | **0.796** |
+| Kekulé `C1=CC` | 0.8% | 32.0% | **0.656** |
+| Stereochemistry `@` | 40.8% | 20.8% | 0.600 |
+| Starts with `[` | 6.4% | 17.6% | 0.556 |
+
+The same aromatic ring was written in two different notations depending on the
+source that curated the molecule: non-permeable molecules mostly use aromatic
+lowercase (`c1ccccc1`), permeable ones often use Kekulé uppercase
+(`C1=CC=CC=C1`). A classifier on raw string characters reaches **AUC 0.887** on
+source strings but only **0.788** on canonical strings: about 0.10 of the score
+is pure writing style. Canonicalization also changes the element at **22.3% of
+the first ten atom positions** on average, which is why the old "first ten
+atoms" encoding changes completely. This is provenance (different sources with
+different conventions), not chemistry.
+
 ## Files
 
 - `tables/balanced_summary.csv`, `balanced_per_split.csv` — dataset 1.
