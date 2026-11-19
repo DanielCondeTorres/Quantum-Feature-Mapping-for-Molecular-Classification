@@ -58,7 +58,10 @@ the method README.
 │   ├── QUANTUM_FEATURES.md  # How quantum features are extracted, step by step
 │   └── generate_encoding_visual.py
 ├── analysis/
-│   └── bbbp_feature_audit/  # Molecules, RDKit features, plots and leakage audit
+│   ├── bbbp_feature_audit/  # Molecules, RDKit features, plots and leakage audit
+│   └── balanced_5050/       # Clean 50/50 CSVs: old versus new techniques
+├── BBBP_balanced_50_50.csv          # 125/125, no original row number
+├── BBBP_balanced_50_50_canonical.csv  # Same, with canonical SMILES
 ├── experiments/          # Shared tools and reproducible benchmark entry points
 │   └── legacy/           # Qiskit-dependent historical reproduction scripts
 ├── BBBP.csv
