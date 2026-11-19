@@ -12,6 +12,8 @@ from .chemistry import (
     assign_qubits,
     Strategy,
     preprocess_smiles,
+    molecular_length_features,
+    molecular_size_angle,
     compute_composite_bbb_angles,
     BackboneSelection,
     select_backbone_atoms,
@@ -103,7 +105,8 @@ def __getattr__(name):
 
 __all__ = [
     "encode_molecule", "assign_qubits", "Strategy", "build_circuit",
-    "preprocess_smiles", "compute_composite_bbb_angles",
+    "preprocess_smiles", "molecular_length_features", "molecular_size_angle",
+    "compute_composite_bbb_angles",
     "backbone_retention_profile", "dataset_backbone_summary",
     "backbone_connectivity_summary", "select_connected_core", "backbone_is_connected",
     "BackboneSelection", "select_backbone_atoms", "TailSummary", "summarize_tail",

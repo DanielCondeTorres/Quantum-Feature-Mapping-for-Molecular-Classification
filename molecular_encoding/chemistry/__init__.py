@@ -9,7 +9,11 @@ from .backbone_selection import (
 )
 from .composite_descriptor import compute_composite_bbb_angles
 from .preprocessing import preprocess_dataset, preprocess_smiles
-from .properties import get_atom_properties
+from .properties import (
+    get_atom_properties,
+    molecular_length_features,
+    molecular_size_angle,
+)
 from .tail_summaries import TailSummary, summarize_tail
 
 __all__ = [

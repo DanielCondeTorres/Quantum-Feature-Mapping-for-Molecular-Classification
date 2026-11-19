@@ -890,6 +890,52 @@ treated as a stable chemical claim. Reproduce with
 `results/rdkit_descriptor_{per_split,summary,importance,correlations}.csv` and
 `rdkit_descriptor_settings.json`.
 
+#### Optional molecular-length channel
+
+Since the backbone is fixed at ten atoms, a molecule's length is only implicit
+in the tail compression. `statevector_features(..., size_channel=...)` adds an
+**opt-in** length signal without changing the qubit budget: a bounded Ry angle
+from `heavy_atoms`, `graph_diameter` or `graph_radius` (`properties.py`,
+scales 25 / 10 / 5) is blended into the q10 chemical tail rotation with weight
+`size_weight`. For molecules with no tail, q10 would be idle, so it now carries
+the length signal alone. `size_channel="none"` is the default and reproduces
+the established embedding exactly. The same options exist in `build_circuit`
+for Qiskit circuits.
+
+`python -m experiments.run_length_channel_ablation` compares the variants on
+the shared folds (chemical-coverage selector, 78 `Zi + ZiZj` moments):
+
+| Arm | Acc, C=10 | AUC, C=10 | Acc, nested C | AUC, nested C |
+|---|---:|---:|---:|---:|
+| TPSA baseline | 0.667 | 0.716 | 0.686 | 0.760 |
+| TPSA + size(heavy atoms) | 0.660 | 0.709 | 0.678 | 0.755 |
+| **TPSA + size(diameter)** | **0.695** | **0.734** | 0.679 | **0.762** |
+| TPSA + size(radius) | 0.683 | 0.730 | 0.667 | 0.745 |
+| TPSA + size(diameter), weight 0.8 | 0.659 | 0.708 | 0.644 | 0.730 |
+| Pauling baseline | 0.632 | 0.697 | 0.625 | 0.702 |
+| Pauling + size(diameter) | 0.619 | 0.690 | 0.632 | 0.718 |
+
+Topological **diameter** helps at a moderate weight: fixed-$C$ accuracy rises
+from 0.667 to 0.695 and AUC from 0.716 to 0.734, while nested-$C$ AUC is
+essentially unchanged (0.760 → 0.762). Heavy-atom count and radius are weaker,
+and a weight of 0.8 overwrites too much of the chemical tail signal and hurts.
+The practical reading is that length adds a small amount of signal that the
+fixed-$C$ model can use, but retuning $C$ already absorbs most of it; with ten
+correlated splits and seven arms examined, this is exploratory rather than a
+significant gain. This does not contradict the descriptor study: length alone
+is weak, but it can be conditionally useful inside the joint representation.
+
+A note on qubit order, since it often causes confusion: a **global relabeling**
+of all qubits simply permutes the coordinates of the 78-moment vector. Because
+RBF kernels and Euclidean distances are invariant to coordinate permutations,
+the SVM scores are exactly identical (verified: 0.6667 / 0.7162 before and
+after a random permutation). What changes performance is the **per-molecule
+atom-to-qubit rule**: `SMILES_ORDER` maps atoms according to the arbitrary
+source-file traversal, so different molecules put different chemistry on the
+same coordinate; the chemistry-aware selector derives the order from the
+molecular graph and is invariant to the input string. The randomized-SMILES
+test (167/248 flips versus 0/248) measures precisely this difference.
+
 #### References
 
 - Gilmer, J. et al. (2017). [Neural Message Passing for Quantum Chemistry](https://proceedings.mlr.press/v70/gilmer17a.html). *ICML / PMLR 70*, 1263–1272.

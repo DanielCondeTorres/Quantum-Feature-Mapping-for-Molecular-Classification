@@ -203,6 +203,57 @@ def composite_pharmacophore(assignment: QubitAssignment) -> dict[int, float]:
     return compute_composite_bbb_angles(assignment)
 
 
+def molecular_length_features(mol: Chem.Mol) -> dict[str, float]:
+    """Molecule-level size and topological length for an explicit embedding.
+
+    ``heavy_atoms`` is the heavy-atom count; ``graph_diameter`` and
+    ``graph_radius`` describe the heavy-atom graph of the largest connected
+    component. All three are computed from the 2D graph, so they are
+    SMILES-invariant and need no conformers. For a fragmented molecule the
+    largest component is used, matching the connected-backbone convention.
+    """
+    import networkx as nx
+
+    heavy = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1]
+    if not heavy:
+        return {"heavy_atoms": 0.0, "graph_diameter": 0.0, "graph_radius": 0.0}
+
+    graph = nx.Graph()
+    graph.add_nodes_from(heavy)
+    for bond in mol.GetBonds():
+        left, right = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        if left in graph and right in graph:
+            graph.add_edge(left, right)
+
+    component = max(nx.connected_components(graph), key=len)
+    subgraph = graph.subgraph(component)
+    return {
+        "heavy_atoms": float(len(heavy)),
+        "graph_diameter": float(nx.diameter(subgraph)),
+        "graph_radius": float(nx.radius(subgraph)),
+    }
+
+
+# Fixed scales for an optional molecular-length embedding channel. They bound
+# the extra Ry angle to [0, π] without fitting anything to BBBP labels.
+SIZE_CHANNEL_SCALES = {
+    "heavy_atoms": 25.0,
+    "graph_diameter": 10.0,
+    "graph_radius": 5.0,
+}
+
+
+def molecular_size_angle(mol: Chem.Mol, size_channel: str) -> float:
+    """Bounded Ry angle for a molecular size/topological-length channel."""
+    if size_channel not in SIZE_CHANNEL_SCALES:
+        raise ValueError(
+            f"Unknown size_channel: {size_channel!r}; "
+            f"use one of {tuple(SIZE_CHANNEL_SCALES)}"
+        )
+    value = molecular_length_features(mol)[size_channel]
+    return float(np.pi * min(value / SIZE_CHANNEL_SCALES[size_channel], 1.0))
+
+
 # ---------------------------------------------------------------------------
 # Registry — add new extractors here
 # ---------------------------------------------------------------------------

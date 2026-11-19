@@ -19,7 +19,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from molecular_encoding.chemistry.atom_selection import Strategy, assign_qubits
-from molecular_encoding.chemistry.properties import get_atom_properties
+from molecular_encoding.chemistry.properties import (
+    get_atom_properties,
+    molecular_size_angle,
+)
 from molecular_encoding.chemistry.tail_summaries import summarize_tail
 from molecular_encoding.quantum.readout import DEFAULT_READOUT, features_from_probabilities
 
@@ -79,8 +82,15 @@ def statevector_probabilities(
     prop: str = "pauling_en",
     tail_mode: str = "global",
     tail_angles: tuple[float, float] | None = None,
+    size_channel: str = "none",
+    size_weight: float = 0.4,
 ) -> np.ndarray:
-    """Return exact NumPy statevector probabilities for the 10+2 circuit."""
+    """Return exact NumPy statevector probabilities for the 10+2 circuit.
+
+    ``size_channel`` optionally blends a bounded molecular-length angle into
+    the q10 tail rotation; it is supported only with ``tail_mode='global'``.
+    The default ``'none'`` leaves the established embedding untouched.
+    """
     assignment = assign_qubits(smiles, strategy=strategy, n_backbone=N_BACKBONE, n_tail=N_TAIL)
     if assignment is None:
         raise ValueError(f"RDKit could not parse SMILES: {smiles!r}")
@@ -113,12 +123,23 @@ def statevector_probabilities(
         _apply_ry(state, angle, qubit)
 
     tail = assignment.tail_indices
+    if size_channel != "none" and tail_mode != "global":
+        raise ValueError("size_channel is only supported with tail_mode='global'")
+    size_angle = 0.0 if size_channel == "none" else molecular_size_angle(assignment.mol, size_channel)
+
     if tail and tail_mode == "global":
         if tail_angles is None:
             summary = summarize_tail(assignment.mol, assignment.backbone_indices)
             tail_angles = summary.chemical_angle, summary.structural_angle
-        _apply_ry(state, float(tail_angles[0]), N_BACKBONE)
-        _apply_ry(state, float(tail_angles[1]), N_BACKBONE + 1)
+        chemical_angle, structural_angle = float(tail_angles[0]), float(tail_angles[1])
+        if size_channel != "none":
+            # q10 keeps its chemical meaning; q11 keeps topology/interface.
+            chemical_angle = (1.0 - size_weight) * chemical_angle + size_weight * size_angle
+        _apply_ry(state, chemical_angle, N_BACKBONE)
+        _apply_ry(state, structural_angle, N_BACKBONE + 1)
+    elif size_channel != "none" and tail_mode == "global":
+        # No tail atoms: q10 would be idle, so it now carries the length signal.
+        _apply_ry(state, size_weight * size_angle, N_BACKBONE)
     elif tail and tail_mode == "sum":
         for indices, qubit in ((tail[0::2], N_BACKBONE), (tail[1::2], N_BACKBONE + 1)):
             values = [atom_properties.get(idx, 0.0) for idx in indices]
@@ -171,10 +192,13 @@ def statevector_features(
     *,
     readout: str = DEFAULT_READOUT,
     tail_angles: tuple[float, float] | None = None,
+    size_channel: str = "none",
+    size_weight: float = 0.4,
 ) -> np.ndarray:
     """Simulate one molecule and extract a selected measurement readout."""
     probabilities = statevector_probabilities(
-        smiles, strategy, prop=prop, tail_mode=tail_mode, tail_angles=tail_angles
+        smiles, strategy, prop=prop, tail_mode=tail_mode, tail_angles=tail_angles,
+        size_channel=size_channel, size_weight=size_weight,
     )
     return features_from_probabilities(probabilities, readout=readout)[0]
 

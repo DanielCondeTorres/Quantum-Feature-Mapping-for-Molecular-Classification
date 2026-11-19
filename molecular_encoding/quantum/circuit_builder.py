@@ -35,7 +35,11 @@ import numpy as np
 from qiskit import QuantumCircuit
 
 from ..chemistry.atom_selection import QubitAssignment
-from ..chemistry.properties import get_atom_properties, PAULING_EN
+from ..chemistry.properties import (
+    get_atom_properties,
+    molecular_size_angle,
+    PAULING_EN,
+)
 from ..chemistry.tail_summaries import summarize_tail
 
 ALPHA_DEFAULT = 0.1   # Same as original QAMP 2026
@@ -46,6 +50,8 @@ def build_circuit(
     alpha: float = ALPHA_DEFAULT,
     prop: str = "pauling_en",
     tail_mode: str = "global",
+    size_channel: str = "none",
+    size_weight: float = 0.4,
 ) -> QuantumCircuit:
     """
     Build a QuantumCircuit from a QubitAssignment.
@@ -61,6 +67,10 @@ def build_circuit(
     tail_mode  : str              How to encode tail atoms into tail qubits.
                                   One of: "global" (recommended), "sum" (legacy),
                                   "stats", "pharm".
+    size_channel : str            Optional molecular-length channel blended into
+                                  q10 with tail_mode="global": "none" (default),
+                                  "heavy_atoms", "graph_diameter", "graph_radius".
+    size_weight  : float          Weight of the length angle in the q10 blend.
 
     Returns
     -------
@@ -104,7 +114,10 @@ def build_circuit(
     # ------------------------------------------------------------------
     # Stage 2: Tail summary encoding
     # ------------------------------------------------------------------
-    _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, tail_mode, n_backbone)
+    _encode_tail(
+        qc, mol, tail_indices, atom_props, alpha, prop, tail_mode, n_backbone,
+        size_channel=size_channel, size_weight=size_weight,
+    )
 
     # ------------------------------------------------------------------
     # Stage 3: Topological entanglement (Rxx gates)
@@ -119,9 +132,14 @@ def build_circuit(
 # Internal: tail encoding modes
 # ---------------------------------------------------------------------------
 
-def _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbone):
-    if not tail_indices:
+def _encode_tail(
+    qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbone,
+    size_channel="none", size_weight=0.4,
+):
+    if not tail_indices and size_channel == "none":
         return
+    if size_channel != "none" and mode != "global":
+        raise ValueError("size_channel is only supported with tail_mode='global'")
 
     n_tail = qc.num_qubits - n_backbone
     tail_qubit_base = n_backbone
@@ -135,9 +153,14 @@ def _encode_tail(qc, mol, tail_indices, atom_props, alpha, prop, mode, n_backbon
             if atom.GetAtomicNum() > 1 and atom.GetIdx() not in tail_set
         ]
         summary = summarize_tail(mol, backbone_indices)
-        if n_tail >= 1:
-            qc.ry(summary.chemical_angle, tail_qubit_base)
-        if n_tail >= 2:
+        chemical_angle = summary.chemical_angle
+        if size_channel != "none":
+            # q10 keeps its chemical meaning; q11 keeps topology/interface.
+            size_angle = molecular_size_angle(mol, size_channel)
+            chemical_angle = (1.0 - size_weight) * chemical_angle + size_weight * size_angle
+        if n_tail >= 1 and (tail_indices or size_channel != "none"):
+            qc.ry(chemical_angle, tail_qubit_base)
+        if n_tail >= 2 and tail_indices:
             qc.ry(summary.structural_angle, tail_qubit_base + 1)
 
     elif mode == "sum":

@@ -17,6 +17,7 @@ root, e.g. `python -m experiments.run_selection_comparison`.
 | `angle_mixture_ablation_*` | Equal-weight single-Ry mixtures of Pauling, TPSA, Gasteiger and Crippen channels |
 | `connected_core_*` | Connected-backbone selector, canonical-traversal control, and tail-mode comparison, with backbone connectivity diagnostics |
 | `rdkit_descriptor_*` | Univariate BBBP scores, held-out permutation importance, and label correlations for interpretable RDKit descriptors |
+| `length_channel_*` | Opt-in molecular-length channel blended into the q10 tail rotation, with weight and metric arms |
 | `pca_bbbp_*` | PCA-derived auxiliary-feature experiment |
 
 The CSV files are descriptive benchmark artifacts, not independent test sets;
