@@ -102,6 +102,21 @@ class QubitAssignment:
     selection_metadata: dict = field(default_factory=dict)
 
 
+def _selection_metadata(selection, *, backbone_connected: bool | None = None) -> dict:
+    """Expose a selector's scores and token-level rationale on the assignment.
+
+    All coverage selectors return the same :class:`BackboneSelection` shape;
+    only the connected-core variant adds an explicit connectivity flag.
+    """
+    metadata = {
+        "selection_scores": dict(selection.scores),
+        "selection_reasons": dict(selection.reasons),
+    }
+    if backbone_connected is not None:
+        metadata["backbone_connected"] = backbone_connected
+    return metadata
+
+
 def assign_qubits(
     smiles: str,
     strategy: Strategy = Strategy.CHEMICAL_COVERAGE,
@@ -153,6 +168,8 @@ def assign_qubits(
     # --- Select backbone atom indices by strategy ---
     selection_metadata = {}
     if strategy == Strategy.SMILES_ORDER:
+        # Deliberately representation-dependent: this is the historical control
+        # that leaks source-file traversal order (quantified in the README).
         ordered = heavy_indices
 
     elif strategy == Strategy.CANONICAL_RANK:
@@ -172,10 +189,7 @@ def assign_qubits(
     elif strategy == Strategy.CHEMICAL_COVERAGE:
         selection = select_backbone_atoms(mol, n_backbone, centrality)
         ordered = list(selection.selected_atoms + selection.tail_atoms)
-        selection_metadata = {
-            "selection_scores": dict(selection.scores),
-            "selection_reasons": dict(selection.reasons),
-        }
+        selection_metadata = _selection_metadata(selection)
 
     elif strategy == Strategy.PHYSICOCHEMICAL_COVERAGE:
         selection = select_backbone_atoms(
@@ -184,19 +198,15 @@ def assign_qubits(
             distance_diversity=True,
         )
         ordered = list(selection.selected_atoms + selection.tail_atoms)
-        selection_metadata = {
-            "selection_scores": dict(selection.scores),
-            "selection_reasons": dict(selection.reasons),
-        }
+        selection_metadata = _selection_metadata(selection)
 
     elif strategy == Strategy.CONNECTED_CORE:
         selection = select_connected_core(mol, n_backbone, centrality)
         ordered = list(selection.selected_atoms + selection.tail_atoms)
-        selection_metadata = {
-            "selection_scores": dict(selection.scores),
-            "selection_reasons": dict(selection.reasons),
-            "backbone_connected": backbone_is_connected(mol, selection.selected_atoms),
-        }
+        selection_metadata = _selection_metadata(
+            selection,
+            backbone_connected=backbone_is_connected(mol, selection.selected_atoms),
+        )
 
     elif strategy == Strategy.CANONICAL_TRAVERSAL:
         # ``heavy_indices`` is the atom order of the canonical SMILES parsed

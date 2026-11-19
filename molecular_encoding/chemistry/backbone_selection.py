@@ -53,6 +53,45 @@ _CONNECTIVITY_WEIGHT = 0.20
 _CENTRALITY_WEIGHT = 0.15
 
 
+def _token_weights(roles, environments, atom_indices) -> dict[str, float]:
+    """Fixed weight for every feature token used by the coverage selectors.
+
+    Morgan environment tokens are discounted by their frequency in this
+    molecule, so a repeated local environment adds diminishing coverage. Role
+    tokens use the fixed chemical weights above; coarse physchem bins get a
+    small uniform weight. No BBBP labels enter this calculation.
+    """
+    frequencies = Counter(
+        token for atom_idx in atom_indices for token in environments[atom_idx]
+    )
+    weights: dict[str, float] = {}
+    for token in _all_tokens(roles, environments, atom_indices):
+        if token.startswith("morgan:"):
+            weights[token] = 1.0 / sqrt(frequencies[token])
+        elif token.startswith("role:"):
+            weights[token] = _ROLE_WEIGHTS[token.split(":", 1)[1]]
+        else:
+            weights[token] = 0.6
+    return weights
+
+
+def _centrality_scale(mol, centrality, heavy_atoms) -> float:
+    """Denominator that maps supplied centralities (or degrees) into [0, 1]."""
+    supplied_max = max((centrality or {}).values(), default=0.0)
+    if supplied_max > 0:
+        return supplied_max
+    return max(
+        (mol.GetAtomWithIdx(i).GetDegree() for i in heavy_atoms), default=1
+    ) or 1
+
+
+def _normalized_centrality(mol, centrality, scale: float, atom_idx: int) -> float:
+    """Betweenness centrality when supplied, otherwise a degree proxy."""
+    if centrality is None:
+        return mol.GetAtomWithIdx(atom_idx).GetDegree() / scale
+    return centrality.get(atom_idx, 0.0) / scale
+
+
 def select_backbone_atoms(
     mol: Chem.Mol,
     n_backbone: int = 10,
@@ -112,24 +151,8 @@ def select_backbone_atoms(
     if physicochemical_coverage:
         environments = _add_physchem_tokens(mol, environments)
 
-    frequencies = Counter(
-        token for atom_idx in heavy_atoms for token in environments[atom_idx]
-    )
-    token_weights: dict[str, float] = {}
-    for token in _all_tokens(roles, environments, heavy_atoms):
-        if token.startswith("morgan:"):
-            # Diminishing value for common/repeated local environments.
-            token_weights[token] = 1.0 / sqrt(frequencies[token])
-        elif token.startswith("role:"):
-            token_weights[token] = _ROLE_WEIGHTS[token.split(":", 1)[1]]
-        else:
-            token_weights[token] = 0.6
-
-    max_centrality = max((centrality or {}).values(), default=0.0)
-    if max_centrality <= 0:
-        max_centrality = max(
-            (mol.GetAtomWithIdx(i).GetDegree() for i in heavy_atoms), default=1
-        ) or 1
+    token_weights = _token_weights(roles, environments, heavy_atoms)
+    max_centrality = _centrality_scale(mol, centrality, heavy_atoms)
 
     selected: list[int] = []
     selected_set: set[int] = set()
@@ -148,11 +171,9 @@ def select_backbone_atoms(
             tokens = roles[atom_idx] | environments[atom_idx]
             new_tokens = tuple(sorted(tokens - covered))
             coverage_gain = sum(token_weights[token] for token in new_tokens)
-
-            if centrality is None:
-                centrality_value = mol.GetAtomWithIdx(atom_idx).GetDegree() / max_centrality
-            else:
-                centrality_value = centrality.get(atom_idx, 0.0) / max_centrality
+            centrality_value = _normalized_centrality(
+                mol, centrality, max_centrality, atom_idx
+            )
 
             neighbors_selected = sum(
                 neighbor.GetIdx() in selected_set
@@ -162,21 +183,27 @@ def select_backbone_atoms(
             degree = max(1, mol.GetAtomWithIdx(atom_idx).GetDegree())
             connectivity_value = neighbors_selected / degree
 
-            if distance_diversity and selected_set:
+            if distance_diversity:
+                # Optional novelty term: reward atoms a few bonds away from
+                # the current selection, capped so it cannot dominate coverage.
                 distances = [
                     nx_distance(mol, atom_idx, selected_idx)
                     for selected_idx in selected_set
                 ]
-                distance_novelty = min(min(distances), 4) / 4.0
-            elif distance_diversity:
-                distance_novelty = 1.0
-            if distance_diversity:
-                score = (coverage_gain + _CENTRALITY_WEIGHT * centrality_value
-                         + 0.10 * connectivity_value + 0.20 * distance_novelty)
+                distance_novelty = min(min(distances), 4) / 4.0 if distances else 1.0
+                score = (
+                    coverage_gain
+                    + _CENTRALITY_WEIGHT * centrality_value
+                    + 0.10 * connectivity_value
+                    + 0.20 * distance_novelty
+                )
             else:
-                # Preserve the established selector as the unchanged default.
-                score = (coverage_gain + _CENTRALITY_WEIGHT * centrality_value
-                         + _CONNECTIVITY_WEIGHT * connectivity_value)
+                # Established default selector; keep these weights unchanged.
+                score = (
+                    coverage_gain
+                    + _CENTRALITY_WEIGHT * centrality_value
+                    + _CONNECTIVITY_WEIGHT * connectivity_value
+                )
             # Exact deterministic tie-break; canonical ranks do not contribute
             # to the score and therefore are not mistaken for importance.
             if score > best_score or (
@@ -232,28 +259,11 @@ def select_connected_core(
     ranks = list(Chem.CanonicalRankAtoms(mol, breakTies=True))
     roles = atom_role_tokens(mol)
     environments = _morgan_environment_tokens(mol)
-    frequencies = Counter(
-        token for atom_idx in heavy_atoms for token in environments[atom_idx]
-    )
-    token_weights: dict[str, float] = {}
-    for token in _all_tokens(roles, environments, heavy_atoms):
-        if token.startswith("morgan:"):
-            token_weights[token] = 1.0 / sqrt(frequencies[token])
-        elif token.startswith("role:"):
-            token_weights[token] = _ROLE_WEIGHTS[token.split(":", 1)[1]]
-        else:
-            token_weights[token] = 0.6
-
-    max_centrality = max((centrality or {}).values(), default=0.0)
-    if max_centrality <= 0:
-        max_centrality = max(
-            (mol.GetAtomWithIdx(i).GetDegree() for i in heavy_atoms), default=1
-        ) or 1
+    token_weights = _token_weights(roles, environments, heavy_atoms)
+    max_centrality = _centrality_scale(mol, centrality, heavy_atoms)
 
     def centrality_of(atom_idx: int) -> float:
-        if centrality is None:
-            return mol.GetAtomWithIdx(atom_idx).GetDegree() / max_centrality
-        return centrality.get(atom_idx, 0.0) / max_centrality
+        return _normalized_centrality(mol, centrality, max_centrality, atom_idx)
 
     selected: list[int] = []
     selected_set: set[int] = set()
@@ -408,7 +418,6 @@ def select_bbb_property_diverse_atoms(
             graph_distance = min(min(float(distances[idx, j]), 5.0) / 5.0 for j in selected)
             tokens = environments[idx] | roles[idx]
             new_tokens = tuple(sorted(tokens - covered))
-            all_tokens = environments[idx] | roles[idx]
             env_novelty = (sum(1.0 / sqrt(frequencies[t]) for t in environments[idx]
                                if t not in covered) / max(
                                    sum(1.0 / sqrt(frequencies[t]) for t in environments[idx]), 1e-12
@@ -441,7 +450,7 @@ def _bbb_property_vectors(mol: Chem.Mol) -> np.ndarray:
     rw = Chem.RWMol(mol)
     AllChem.ComputeGasteigerCharges(rw)
     tpsa = rdMolDescriptors._CalcTPSAContribs(mol)
-    logp = Crippen.rdMolDescriptors._CalcCrippenContribs(mol)
+    logp = rdMolDescriptors._CalcCrippenContribs(mol)
     roles = atom_role_tokens(mol)
     for atom in mol.GetAtoms():
         idx = atom.GetIdx()
@@ -533,7 +542,7 @@ def _morgan_environment_tokens(mol: Chem.Mol) -> dict[int, set[str]]:
 
 def _add_physchem_tokens(mol: Chem.Mol, environments: dict[int, set[str]]):
     """Augment atom environments with interpretable, fixed-scale features."""
-    from rdkit.Chem import AllChem, Crippen, rdMolDescriptors
+    from rdkit.Chem import AllChem, Crippen
 
     rw = Chem.RWMol(mol)
     AllChem.ComputeGasteigerCharges(rw)

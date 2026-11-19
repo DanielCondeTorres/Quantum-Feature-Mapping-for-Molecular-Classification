@@ -11,19 +11,26 @@ The circuit_builder then scales these values to angles in [0, π].
 AVAILABLE PROPERTIES
 --------------------
   pauling_en        : Pauling electronegativity (original QAMP 2026 encoding).
-                      Fixed table, 10 elements. Falls back to 1.0.
+                      Fixed element table with a fallback value.
 
   gasteiger_charge  : Partial atomic charge (Gasteiger method via RDKit).
-                      Context-sensitive: same element has different values
-                      depending on its bonding environment.
-                      Range: typically −0.5 to +0.5. Scaled to [0, π].
+                      Context-sensitive: the same element can differ depending
+                      on its bonding environment. Scaled to [0, π].
 
   crippen_logp      : Per-atom contribution to logP (Crippen method).
-                      Directly relevant to lipophilicity and BBB permeability.
+                      Relevant to lipophilicity and BBB permeability.
 
-  combined_bbb      : Composite score for BBB permeability per atom.
-                      = w1 * |gasteiger_charge| + w2 * crippen_logp_contrib
-                      Empirically motivated by Clark 1999 (tPSA, logP, H-bond).
+  tpsa_contrib      : Per-atom topological polar surface area in Å². The most
+                      predictive chemistry arm in the current BBBP ablations.
+                      Capped at 35 Å² and scaled to [0, π].
+
+  combined_bbb      : Composite score, w_charge * |charge| + w_logp * logp.
+
+  composite_pharmacophore : Delegates to compute_composite_bbb_angles.
+
+Properties with a fixed chemical scale (``pauling_en``, ``crippen_logp``,
+``tpsa_contrib``) keep the same meaning across molecules. ``gasteiger_charge``
+and ``combined_bbb`` instead normalize within the current molecule.
 """
 
 from __future__ import annotations
@@ -125,11 +132,19 @@ def crippen_logp_contrib(assignment: QubitAssignment) -> dict[int, float]:
 
 
 def tpsa_contrib(assignment: QubitAssignment) -> dict[int, float]:
-    """Atomic topological-polar-surface-area contributions in ``[0, π]``.
+    """Atomic TPSA contributions as ``Ry`` angles in ``[0, π]``.
 
-    TPSA directly reflects exposed heteroatom polarity, a complementary signal
-    to lipophilicity for passive BBB permeation.  A 35 Å² atomic cap covers
-    common drug-like N/O/S contributions without a dataset-fitted transform.
+    TPSA is the polar surface contributed by heteroatoms and their attached
+    hydrogens, estimated from the 2D graph (no conformer needed). RDKit returns
+    a per-atom contribution in Å²; this is the local signal used by the
+    ``chemical coverage + TPSA`` arm, complementary to lipophilicity for
+    passive BBB permeation.
+
+    The angle is ``π * clip(TPSA_i / 35 Å², 0, 1)``. The 35 Å² cap is a fixed
+    chemical scale covering common drug-like N/O/S contributions: it uses no
+    dataset statistics and cannot leak test-fold information. Unlike
+    ``pauling_en``, the value depends on the atomic environment, so an amide N
+    and a pyridine N receive different rotations.
     """
     values = rdMolDescriptors._CalcTPSAContribs(assignment.mol)
     return {
