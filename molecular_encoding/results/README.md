@@ -19,6 +19,7 @@ root, e.g. `python -m experiments.run_selection_comparison`.
 | `rdkit_descriptor_*` | Univariate BBBP scores, held-out permutation importance, and label correlations for interpretable RDKit descriptors |
 | `length_channel_*` | Opt-in molecular-length channel blended into the q10 tail rotation, with weight and metric arms |
 | `quantum_algorithms_*` | Fidelity kernel, phase-sensitive Pauli features and data re-uploading versus the default Z-moment readout |
+| `bbbp_raw_*` | Descriptors, EDA summary and settings computed from the raw (unbalanced) BBBP CSV |
 | `pca_bbbp_*` | PCA-derived auxiliary-feature experiment |
 
 The CSV files are descriptive benchmark artifacts, not independent test sets;

@@ -76,6 +76,34 @@ in `molecular_encoding/results/`.
 
 ---
 
+## Raw dataset EDA
+
+The `BBBP.csv` file has no precomputed molecular features: only `num`, `name`,
+the label `p_np` and a SMILES string. `python -m experiments.run_raw_bbbp_eda`
+derives 13 RDKit descriptors from all 2039 parseable raw molecules (1560
+permeable, 479 non-permeable) and writes the standard exploratory plots to
+`docs/assets/bbbp_eda_*.png`.
+
+![Pairplot of raw BBBP descriptors coloured by permeability.](docs/assets/bbbp_eda_pairplot.png)
+
+The class imbalance is visible, and the separation is dominated by polarity:
+permeable molecules concentrate at low TPSA, HBD and HBA and higher logP.
+Descriptive univariate AUCs on the raw data:
+
+| Descriptor | AUC | Descriptor | AUC |
+|---|---:|---|---:|
+| TPSA | 0.829 | HBA | 0.776 |
+| HBD | 0.805 | MolWt | 0.707 |
+| NumHeteroatoms | 0.780 | MolLogP | 0.697 |
+
+More plots (class balance, distributions, boxplots, correlation heatmap) are
+in `docs/assets/`, and the descriptor table plus settings are in
+`molecular_encoding/results/bbbp_raw_*`. This is descriptive raw-data analysis
+without deduplication or balancing; it is not the controlled 250-molecule
+benchmark used by the experiments below.
+
+---
+
 ## Notebooks
 
 ### 1. `Classical_Benchmark.ipynb`
