@@ -25,6 +25,10 @@ or because the source CSV carries non-chemical information?
 | `figures/feature_auc_ranking.png` | Top single features by AUC |
 | `figures/model_comparison.png` | Accuracy and AUC per feature family |
 | `figures/rdkit_confusion_matrix.png` | Random forest on RDKit descriptors, one held-out fold |
+| `figures/pca_2d_map.png` | PC1 vs PC2 after z-scoring, red = permeable, blue = non-permeable, arrows = strongest loadings |
+| `figures/two_feature_map.png` | The same colors on raw MolLogP vs TPSA |
+| `tables/pca_coordinates.csv` | PC1/PC2 coordinate of every molecule |
+| `tables/pca_loadings.csv` | Loading of each descriptor on the first two PCs |
 
 ## Result
 
@@ -44,6 +48,30 @@ partly inherits that provenance signal because the strings and the file order
 come from the same curation process. A model with access to the source file
 order is therefore not learning BBBP chemistry, and its higher score must not
 be presented as a predictive advantage.
+
+![PCA map: red permeable, blue non-permeable](figures/pca_2d_map.png)
+
+## 2D coordinate map (z-score then PCA)
+
+Every descriptor was standardized to z-score (mean 0, SD 1 over the 250
+molecules) before PCA, so no column dominates only because of its units. PC1
+explains 41.9% of the variance and PC2 26.6%; PC1 alone separates the classes
+with AUC 0.680. Red dots are permeable (`p_np=1`), blue dots non-permeable
+(`p_np=0`), as in the source CSV.
+
+The arrows are the strongest loadings: **TPSA, HBA and NumHeteroatoms** point
+toward the non-permeable region (high polarity), while **MolWt,
+HeavyAtomCount and MolarRefractivity** point the opposite way (size). The map
+therefore shows the same chemistry as the AUC table: polarity and hydrogen
+bonding separate the classes better than size or lipophilicity.
+
+![Two descriptors, same colors](figures/two_feature_map.png)
+
+The raw two-axis view (MolLogP vs TPSA) makes it concrete: red molecules
+cluster at TPSA below ~100 Å² and moderate-to-high logP; blue ones populate
+the high-TPSA region. A linear boundary on these two axes already captures
+most of the separation, which is why a simple classifier on a handful of
+descriptors approaches the quantum readouts.
 
 The best defensible chemistry-only model here is the random forest on the 13
 RDKit descriptors (mean AUC 0.742 with nested C). For a real performance

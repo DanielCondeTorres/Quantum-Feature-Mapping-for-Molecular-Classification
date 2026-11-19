@@ -31,12 +31,16 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from rdkit import Chem, RDLogger
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+
+RED = "#D62728"   # permeable (p_np = 1), as requested
+BLUE = "#1F77B4"  # non-permeable (p_np = 0)
 
 from experiments.data import prepare_unique_balanced_data
 from experiments.run_rdkit_descriptor_ablation import ALL_DESCRIPTORS, descriptor_matrix
@@ -173,6 +177,57 @@ def _plot_confusion(matrix: np.ndarray) -> None:
     plt.close(fig)
 
 
+def _pca_projection(matrix: np.ndarray):
+    """Z-score every descriptor, then project onto the first two PCs."""
+    z_scores = StandardScaler().fit_transform(matrix)
+    pca = PCA(n_components=2)
+    coordinates = pca.fit_transform(z_scores)
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+    return coordinates, pca, loadings
+
+
+def _plot_pca_map(coordinates: np.ndarray, loadings: np.ndarray,
+                  pca: PCA, y: np.ndarray) -> None:
+    """2D PCA map, red = permeable, blue = non-permeable, with loadings."""
+    fig, ax = plt.subplots(figsize=(10, 7))
+    for label, color, name in ((0, BLUE, "no permea (0)"), (1, RED, "permea (1)")):
+        selected = y == label
+        ax.scatter(coordinates[selected, 0], coordinates[selected, 1],
+                   s=28, alpha=0.75, c=color, label=name, edgecolors="none")
+    scale = 0.75 * np.max(np.abs(coordinates)) / np.max(np.abs(loadings))
+    for index in np.argsort(np.linalg.norm(loadings, axis=1))[::-1][:7]:
+        dx, dy = loadings[index] * scale
+        ax.arrow(0, 0, dx, dy, color="#333333", width=0.008,
+                 head_width=0.10, length_includes_head=True, alpha=0.85)
+        ax.text(dx * 1.12, dy * 1.12, ALL_DESCRIPTORS[index], fontsize=9, color="#333333")
+    variance = pca.explained_variance_ratio_
+    ax.set_xlabel(f"PC1 ({variance[0]:.1%} variance)")
+    ax.set_ylabel(f"PC2 ({variance[1]:.1%} variance)")
+    ax.set_title("PCA of z-scored RDKit descriptors (arrows = strongest loadings)")
+    ax.axhline(0, color="grey", linewidth=0.6)
+    ax.axvline(0, color="grey", linewidth=0.6)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(FIGURES / "pca_2d_map.png", dpi=160)
+    plt.close(fig)
+
+
+def _plot_two_features(table: pd.DataFrame) -> None:
+    """The classic 2-axis scatter using the two strongest raw descriptors."""
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for label, color, name in ((0, BLUE, "no permea (0)"), (1, RED, "permea (1)")):
+        subset = table[table["p_np"] == label]
+        ax.scatter(subset["MolLogP"], subset["TPSA"], s=26, alpha=0.7,
+                   c=color, label=name, edgecolors="none")
+    ax.set_xlabel("MolLogP (lipophilicity)")
+    ax.set_ylabel("TPSA (polar surface)")
+    ax.set_title("Two raw descriptors: the permeability regions")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(FIGURES / "two_feature_map.png", dpi=160)
+    plt.close(fig)
+
+
 def main() -> None:
     TABLES.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
@@ -201,16 +256,39 @@ def main() -> None:
     by_class = table.groupby("p_np")[list(ALL_DESCRIPTORS)].agg(["mean", "std"]).T
     by_class.to_csv(TABLES / "descriptors_by_class.csv")
 
+    coordinates, pca, loadings = _pca_projection(features["13 RDKit descriptors"])
+    projection = table[["num", "p_np"]].copy()
+    projection["PC1"] = coordinates[:, 0]
+    projection["PC2"] = coordinates[:, 1]
+    projection.to_csv(TABLES / "pca_coordinates.csv", index=False)
+    pd.DataFrame({
+        "descriptor": list(ALL_DESCRIPTORS),
+        "PC1": loadings[:, 0],
+        "PC2": loadings[:, 1],
+    }).to_csv(TABLES / "pca_loadings.csv", index=False)
+
     _plot_row_leakage(table)
     _plot_auc_ranking(auc[auc["auc"] > 0.6])
     _plot_model_comparison(scores)
     _plot_confusion(confusion)
+    _plot_pca_map(coordinates, loadings, pca, y)
+    _plot_two_features(table)
 
-    (OUT / "settings.json").write_text(json.dumps(info, indent=2) + "\n")
+    settings = {
+        **info,
+        "pca_explained_variance": [float(v) for v in pca.explained_variance_ratio_],
+        "pca_pc1_auc": float(max(
+            roc_auc_score(y, coordinates[:, 0]), 1 - roc_auc_score(y, coordinates[:, 0])
+        )),
+        "colors": {"permeable (p_np=1)": "red", "non-permeable (p_np=0)": "blue"},
+    }
+    (OUT / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
     print(f"Wrote audit folder: {OUT}")
     print(f"Molecules: {len(table)}; features per molecule: {len(ALL_DESCRIPTORS)} RDKit descriptors")
     print("\nTop single features by AUC:")
     print(auc.sort_values("auc", ascending=False).head(6).to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    print(f"\nPCA: PC1 {settings['pca_explained_variance'][0]:.1%} variance, "
+          f"AUC {settings['pca_pc1_auc']:.3f}")
 
 
 if __name__ == "__main__":
