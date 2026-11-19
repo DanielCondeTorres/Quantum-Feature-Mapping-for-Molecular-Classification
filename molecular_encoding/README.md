@@ -242,6 +242,20 @@ and `RANDOM` remain available as baselines and controls. Selection is performed
 on heavy atoms; implicit or explicit hydrogens are represented through RDKit's
 features of their bonded heavy atoms.
 
+Two further strategies are used by the connected-core ablation below.
+`CANONICAL_TRAVERSAL` selects the first ten heavy atoms of RDKit's canonical
+SMILES output: it is invariant to the input string but keeps the "first ten"
+rule, unlike the source-file `SMILES_ORDER` control. `CONNECTED_CORE` starts at
+the heavy atom of highest supplied betweenness centrality and, at each step,
+picks the best-scoring atom among the heavy-atom *neighbors* of the already
+selected set, using the same coverage score as `select_backbone_atoms`. If the
+frontier is empty because the molecule is fragmented, a new component is
+seeded the same way. Qubit order is growth order rather than input order. The
+result is a backbone that is connected within a molecular component (99.6% of
+this benchmark sample); a multi-fragment input can still end up with a
+disconnected backbone if the ten-atom budget spans more than one component.
+`backbone_is_connected` exposes the check used in the diagnostics.
+
 ```mermaid
 flowchart LR
     A[SMILES] --> B[RDKit molecule and atom environments]
@@ -631,7 +645,152 @@ scaffold splits, descriptor ablations, and a readout-aware model are needed
 before making a general claim. Results/settings are saved in
 `results/multifeature_comparison_*.csv/json`.
 
-Reproduce with `python -m experiments.run_graph_pooling_comparison`. The script also
+#### Single-angle mixtures: Pauling, TPSA and electronic descriptors
+
+The preceding `multi_physchem` experiment is **not** a weighted sum of
+properties in one angle: it applies several rotations on different axes and
+re-uploads descriptors around graph interactions. To directly test whether
+properties should be combined *inside the atomic input angle*,
+`python -m experiments.run_angle_mixture_ablation` runs a separate controlled
+ablation. All ten property and mixture arms use `CHEMICAL_COVERAGE`, the same
+graph bond gates, global two-qubit tail, exact statevector, 78 Zi/ZiZj readout
+features, balanced sample, and ten outer splits. Within these ten arms, only
+the per-atom backbone $R_y$ angle changes. The historical SMILES/Pauling arm
+is an additional reference control, not one of those ten matched selector arms.
+
+For atom $i$, each channel $x_{ik}$ is mapped to a fixed chemistry-defined
+range $[0,1]$ and combined with equal weights:
+
+$$
+u_i = \frac{1}{K}\sum_{k=1}^{K}x_{ik},\qquad
+\theta_i=\pi u_i.
+$$
+
+The bounded channels are Pauling electronegativity divided by 4; RDKit atomic
+TPSA contribution divided by 35 $\mathrm{\mathring A}^2$; clipped Gasteiger
+partial charge mapped as $\mathrm{clip}((q_i+1)/2,0,1)$; and clipped Crippen
+atomic logP contribution mapped as
+$\mathrm{clip}((\ell_i+1.5)/3,0,1)$. TPSA and Crippen channels are capped at
+the bounds shown by clipping. Aromaticity and donor/acceptor roles are also
+available channels in the module, though not part of this initial comparison.
+These are fixed scales, not z-scores estimated from the full dataset; no test
+fold statistics or BBBP labels enter the angle construction. `StandardScaler`
+in the classifier remains fitted on training data by its sklearn pipeline.
+
+Ten alternatives were evaluated. `fixed C=10` holds the SVM setting constant;
+`nested C` chooses it from $\{0.1,1,10,100,1000\}$ using only inner folds of
+each outer training set. Values are mean $\pm$ sample standard deviation over
+the ten outer random stratified splits (not confidence intervals).
+
+| Atomic-angle input | Accuracy, fixed $C=10$ | ROC-AUC, fixed $C=10$ | Accuracy, nested $C$ | ROC-AUC, nested $C$ |
+|---|---:|---:|---:|---:|
+| Pauling only (new $\pi x$ scale) | 0.667 ± 0.043 | 0.729 ± 0.031 | 0.670 ± 0.050 | 0.725 ± 0.040 |
+| TPSA only | 0.667 ± 0.068 | 0.716 ± 0.059 | **0.686 ± 0.040** | **0.760 ± 0.040** |
+| Gasteiger charge only | 0.644 ± 0.043 | 0.704 ± 0.053 | 0.652 ± 0.049 | 0.702 ± 0.058 |
+| Crippen logP only | 0.592 ± 0.052 | 0.646 ± 0.070 | 0.616 ± 0.046 | 0.651 ± 0.062 |
+| Pauling + TPSA | **0.690 ± 0.039** | 0.739 ± 0.033 | 0.665 ± 0.027 | 0.729 ± 0.036 |
+| Pauling + Gasteiger | 0.662 ± 0.054 | 0.717 ± 0.051 | 0.654 ± 0.051 | 0.706 ± 0.046 |
+| TPSA + Crippen logP | 0.676 ± 0.044 | **0.742 ± 0.027** | **0.687 ± 0.037** | 0.756 ± 0.026 |
+| Pauling + TPSA + Gasteiger | **0.698 ± 0.030** | **0.750 ± 0.038** | 0.684 ± 0.037 | 0.745 ± 0.043 |
+| Pauling + TPSA + Crippen logP | **0.698 ± 0.045** | 0.740 ± 0.029 | 0.683 ± 0.068 | 0.750 ± 0.030 |
+| Pauling + TPSA + Gasteiger + Crippen | 0.690 ± 0.030 | 0.726 ± 0.029 | 0.679 ± 0.051 | 0.743 ± 0.044 |
+| Original source-SMILES + original Pauling encoding | 0.732 ± 0.055 | 0.815 ± 0.044 | 0.762 ± 0.067 | 0.833 ± 0.044 |
+
+Interpretation: combining properties can help **relative to a single channel in
+some settings**. Pauling+TPSA raises accuracy from 0.667 to 0.690 at fixed
+$C$, while TPSA+Crippen gives the highest nested-$C$ accuracy (0.687 versus
+0.686 for TPSA alone; effectively tied at this precision). However, the
+Pauling+TPSA gain does not persist under nested tuning, and no combination
+reliably beats the source-SMILES control. The best fixed-$C$ mean accuracy is
+0.698 (Pauling+TPSA+Gasteiger or +Crippen), but its nested-$C$ accuracy is
+0.684/0.683 and nested ROC-AUC stays below TPSA alone. Thus the result does
+**not** justify saying “more chemical properties improve BBB prediction” or
+that Pauling electronegativity is the best BBB signal. It shows a modest,
+protocol-sensitive benefit from certain mixtures within this particular
+embedding. Ten variants were examined on the same small benchmark, so the
+apparent top result is exploratory; no multiple-comparison correction or
+scaffold-held-out confirmation has been performed.
+
+Also distinguish the **Pauling-only new-angle ablation** ($\theta=\pi\chi/4$)
+from the historical encoding ($\theta=0.1\chi^2$). They are different angle
+maps, so compare Pauling-only above with the explicitly labeled source-SMILES
+historical reference, not as if they were identical implementations. The
+older `multi_physchem` test also changed axes and interactions, so its lower
+score did not isolate a simple property mixture; this new experiment does.
+Reproduce with the command above. Per-split scores, aggregate scores, and
+settings/scales are in `results/angle_mixture_ablation_per_split.csv`,
+`results/angle_mixture_ablation_summary.csv`, and
+`results/angle_mixture_ablation_settings.json`.
+
+#### Connected-core backbone: connectivity versus predictive accuracy
+
+The chemical-coverage selector optimizes chemical diversity, but it frequently
+places atoms that are not bonded to each other on q0–q9. Because the circuit
+can only emit an Rxx gate for a bond with at least one endpoint on the
+backbone, a disconnected selection drops the bonds of the omitted skeleton.
+`experiments/run_connected_core_comparison.py` tests whether keeping the
+backbone connected (`Strategy.CONNECTED_CORE`, described in Section 1.1)
+recovers accuracy. A canonical-traversal control separates "canonical input
+string" from the source-file order used by the historical SMILES arm.
+
+All six arms share the 250-molecule balanced BBBP sample, ten stratified 75/25
+splits, exact NumPy statevector simulation, and the 78-feature `Zi + ZiZj`
+readout. Only the atom-to-qubit map, the uploaded atomic property (Pauling or
+TPSA), and the tail mode (global two-channel or alternating sum) change. Fixed
+`C=10` and nested `C` (3-fold inner AUC over {0.1, 1, 10, 100, 1000}) are both
+reported.
+
+Backbone connectivity on the same 250 molecules, measured by
+`backbone_connectivity_summary`:
+
+| Strategy | Connected backbone | Represented bonds |
+|---|---:|---:|
+| `SMILES_ORDER` | 0.952 | 0.601 |
+| `CANONICAL_TRAVERSAL` | 0.988 | 0.581 |
+| `CHEMICAL_COVERAGE` | 0.360 | 0.707 |
+| `CONNECTED_CORE` | 0.996 | 0.662 |
+
+"Connected backbone" is the fraction of molecules whose selected heavy atoms
+induce a connected subgraph; "represented bonds" is the mean fraction of all
+heavy-atom bonds with an Rxx gate. The connected-core rule achieves its design
+goal, but chemical coverage still represents more bonds because it can place
+atoms at both ends of a path.
+
+Classification results (mean ± sample SD over ten splits):
+
+| Representation | Accuracy, fixed $C=10$ | ROC-AUC, fixed $C=10$ | Accuracy, nested $C$ | ROC-AUC, nested $C$ |
+|---|---:|---:|---:|---:|
+| SMILES order + Pauling + global | **0.732 ± 0.055** | **0.815 ± 0.044** | **0.762 ± 0.067** | **0.833 ± 0.044** |
+| Canonical traversal + Pauling + global | 0.670 ± 0.025 | 0.731 ± 0.042 | 0.667 ± 0.043 | 0.730 ± 0.048 |
+| Chemical coverage + Pauling + global | 0.632 ± 0.037 | 0.697 ± 0.043 | 0.625 ± 0.042 | 0.702 ± 0.047 |
+| Connected core + Pauling + global | 0.629 ± 0.042 | 0.674 ± 0.039 | 0.587 ± 0.082 | 0.662 ± 0.044 |
+| Connected core + TPSA + global | 0.619 ± 0.025 | 0.681 ± 0.050 | 0.600 ± 0.048 | 0.632 ± 0.065 |
+| Connected core + Pauling + sum tail | 0.565 ± 0.048 | 0.583 ± 0.059 | 0.517 ± 0.049 | 0.633 ± 0.060 |
+
+The canonical-traversal control scores well below the historical source-SMILES
+arm with the same property, tail, and first-ten atoms rule applied to the
+canonical string. This reproduces the earlier observation that traversal order
+carries signal on this small sample and is not a SMILES-invariant feature.
+The connected-core selector does **not** improve prediction over chemical
+coverage despite making the backbone almost always connected, and the
+alternating `sum` tail remains the weakest arm. Backbone connectivity alone is
+therefore not a sufficient objective for this encoding.
+
+The nested-$C$ connected-core arms show unusually large F1 dispersion (for
+example, 0.515 ± 0.275 for Pauling + global). This is not a scoring bug: in two
+splits the inner-CV choice $C=0.1$ made the SVM predict a single class on the
+held-out fold (F1 = 0 under `zero_division=0`, accuracy ≈ 0.49). Inner CV
+optimizes AUC, which can prefer the smoother model even when its test
+predictions degenerate; report these means with that caveat rather than as
+stable estimates. All numbers are exact-statevector, random-split results on a
+balanced 250-molecule sample, with no scaffold-held-out confirmation or
+hardware validation. Reproduce with
+`python -m experiments.run_connected_core_comparison`; the saved artifacts are
+`results/connected_core_per_split.csv`, `connected_core_summary.csv`,
+`connected_core_connectivity.csv`, and `connected_core_settings.json`.
+
+The graph-pooling comparison is reproduced with
+`python -m experiments.run_graph_pooling_comparison`. The script also
 checks four alternate SMILES traversals for each of the 250 molecules (1,000
 checks total); all produced identical canonical pooled gate sequences. The
 per-split metrics, selected inner-fold $C$ values, and run settings are stored
@@ -716,11 +875,18 @@ between two tail atoms are omitted. Report this loss beside every backbone-size
 ablation rather than inferring it from classification accuracy alone:
 
 ```python
-from molecular_encoding import backbone_retention_profile, dataset_backbone_summary
+from molecular_encoding import (
+    backbone_connectivity_summary, backbone_retention_profile,
+    dataset_backbone_summary, select_connected_core, backbone_is_connected,
+)
 
 backbone_retention_profile(smiles, backbone_sizes=(6, 8, 10, 12))
 dataset_backbone_summary(bbpb_smiles, backbone_sizes=(6, 8, 10, 12))
+backbone_connectivity_summary(bbpb_smiles)  # connected fraction per strategy
 ```
+
+`select_connected_core` and `backbone_is_connected` are also exported for callers
+that need the connected selector directly.
 
 `represented_bond_fraction` is the fraction of molecular bonds represented by
 an Rxx gate (backbone--backbone or backbone--tail); `tail_tail_bonds_dropped`

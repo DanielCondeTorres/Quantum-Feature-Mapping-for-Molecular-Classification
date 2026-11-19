@@ -17,7 +17,11 @@ except ImportError:
 
 from molecular_encoding.chemistry.preprocessing import preprocess_smiles
 from molecular_encoding.chemistry.atom_selection import assign_qubits, Strategy, describe_assignment
-from molecular_encoding.analysis.capacity_analysis import backbone_retention_profile
+from molecular_encoding.analysis.capacity_analysis import (
+    backbone_connectivity_summary,
+    backbone_retention_profile,
+)
+from molecular_encoding.chemistry.backbone_selection import backbone_is_connected
 from molecular_encoding.analysis.collision_analysis import run_collision_analysis
 from molecular_encoding.chemistry.properties import get_atom_properties
 
@@ -122,6 +126,29 @@ class TestAssignment:
         assert len(values) == a.mol.GetNumAtoms()
         assert all(0.0 <= angle <= 3.141593 for angle in values.values())
 
+    def test_connected_core_is_invariant_and_connected(self):
+        variants = ("OC(=O)c1ccccc1", "c1ccc(cc1)C(=O)O")
+        assignments = [assign_qubits(smiles, strategy=Strategy.CONNECTED_CORE) for smiles in variants]
+        assert assignments[0].backbone_indices == assignments[1].backbone_indices
+        assert assignments[0].smiles == assignments[1].smiles
+        for smiles in (IBUPROFEN, CAFFEINE, "CC(=O)Oc1ccccc1C(=O)O", BENZENE):
+            assignment = assign_qubits(smiles, strategy=Strategy.CONNECTED_CORE)
+            assert backbone_is_connected(assignment.mol, assignment.backbone_indices)
+            assert assignment.selection_metadata["backbone_connected"] is True
+        # A two-fragment mixture cannot be made into one connected backbone.
+        fragments = assign_qubits("CCO.CC", strategy=Strategy.CONNECTED_CORE)
+        assert backbone_is_connected(fragments.mol, fragments.backbone_indices) is False
+
+    def test_canonical_traversal_ignores_the_input_string(self):
+        first = assign_qubits("OC(=O)c1ccccc1", strategy=Strategy.CANONICAL_TRAVERSAL)
+        second = assign_qubits("c1ccc(cc1)C(=O)O", strategy=Strategy.CANONICAL_TRAVERSAL)
+        source = assign_qubits("OC(=O)c1ccccc1", strategy=Strategy.SMILES_ORDER)
+        assert first.backbone_indices == second.backbone_indices
+        assert first.smiles == second.smiles
+        # The source string is a different walk from the canonical SMILES,
+        # so the paper's original rule and this invariant rule need not match.
+        assert source.smiles != first.smiles or source.backbone_indices == first.backbone_indices
+
 
 class TestBackboneCapacity:
     def test_profile_exposes_the_ten_atom_loss(self):
@@ -132,6 +159,14 @@ class TestBackboneCapacity:
         assert at_ten["represented_bond_fraction"] <= 1.0
         assert at_full["tail_tail_bonds_dropped"] == 0
         assert at_full["represented_bond_fraction"] == 1.0
+
+    def test_connectivity_summary_counts_connected_backbones(self):
+        summary = backbone_connectivity_summary(
+            [IBUPROFEN, CAFFEINE, BENZENE],
+            strategies=(Strategy.CONNECTED_CORE,),
+        )
+        assert summary.loc[0, "connected_backbone_fraction"] == 1.0
+        assert summary.loc[0, "n_molecules"] == 3
 
 
 class TestCollisionAnalysis:

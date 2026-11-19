@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 
 from ..chemistry.atom_selection import Strategy, assign_qubits
+from ..chemistry.backbone_selection import backbone_is_connected
 
 
 def backbone_retention_profile(
@@ -81,3 +83,49 @@ def dataset_backbone_summary(
         mean_bond_retention=("represented_bond_fraction", "mean"),
         mean_dropped_tail_bonds=("tail_tail_bonds_dropped", "mean"),
     )
+
+
+def backbone_connectivity_summary(
+    smiles_list: Iterable[str],
+    strategies: Iterable[Strategy] = (
+        Strategy.SMILES_ORDER,
+        Strategy.CHEMICAL_COVERAGE,
+        Strategy.CONNECTED_CORE,
+    ),
+    n_backbone: int = 10,
+) -> pd.DataFrame:
+    """Report how often a backbone is connected and how many bonds it keeps.
+
+    One row per strategy. ``connected_backbone_fraction`` is the fraction of
+    parsed molecules whose selected heavy atoms induce a connected subgraph.
+    ``mean_represented_bond_fraction`` counts backbone--backbone and
+    backbone--tail bonds over all heavy-atom bonds. Tail--tail bonds stay
+    unrepresented in every strategy.
+    """
+    rows = []
+    parsed = [smiles for smiles in smiles_list if smiles]
+    for strategy in strategies:
+        connected = 0
+        bond_fractions = []
+        n_ok = 0
+        for smiles in parsed:
+            assignment = assign_qubits(smiles, strategy=strategy, n_backbone=n_backbone)
+            if assignment is None:
+                continue
+            n_ok += 1
+            connected += int(backbone_is_connected(assignment.mol, assignment.backbone_indices))
+            profile = backbone_retention_profile(
+                assignment.smiles, strategy=strategy, backbone_sizes=(n_backbone,)
+            )
+            if not profile.empty:
+                bond_fractions.append(float(profile["represented_bond_fraction"].iloc[0]))
+        rows.append({
+            "strategy": strategy.value,
+            "n_molecules": n_ok,
+            "n_backbone": n_backbone,
+            "connected_backbone_fraction": connected / n_ok if n_ok else float("nan"),
+            "mean_represented_bond_fraction": (
+                float(np.mean(bond_fractions)) if bond_fractions else float("nan")
+            ),
+        })
+    return pd.DataFrame(rows)

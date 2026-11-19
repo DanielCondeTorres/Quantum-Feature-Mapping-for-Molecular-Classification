@@ -100,7 +100,13 @@ def statevector_probabilities(
         probabilities = np.abs(state) ** 2
         return probabilities / probabilities.sum()
 
-    atom_properties = get_atom_properties(assignment, prop=prop)
+    if prop.startswith("angle_mix:"):
+        from molecular_encoding.quantum.angle_embedding import mixed_atom_angles
+
+        channels = tuple(prop.removeprefix("angle_mix:").split("+"))
+        atom_properties = mixed_atom_angles(assignment, channels)
+    else:
+        atom_properties = get_atom_properties(assignment, prop=prop)
     for qubit, atom_idx in enumerate(assignment.backbone_indices):
         value = atom_properties[atom_idx]
         angle = ALPHA * value**2 if prop == "pauling_en" else value

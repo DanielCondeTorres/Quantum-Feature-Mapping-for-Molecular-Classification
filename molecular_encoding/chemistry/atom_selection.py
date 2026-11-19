@@ -42,7 +42,11 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from .backbone_selection import select_backbone_atoms
+from .backbone_selection import (
+    backbone_is_connected,
+    select_backbone_atoms,
+    select_connected_core,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +62,8 @@ class Strategy(enum.Enum):
     RANDOM               = "random"                # Negative control (shuffled)
     CHEMICAL_COVERAGE    = "chemical_coverage"     # Morgan environments + chemical roles
     PHYSICOCHEMICAL_COVERAGE = "physicochemical_coverage" # diverse Morgan + physchem
+    CONNECTED_CORE       = "connected_core"       # connected coverage grown from betweenness seed
+    CANONICAL_TRAVERSAL  = "canonical_traversal"  # first heavy atoms of the canonical SMILES
 
 
 @dataclass
@@ -182,6 +188,22 @@ def assign_qubits(
             "selection_scores": dict(selection.scores),
             "selection_reasons": dict(selection.reasons),
         }
+
+    elif strategy == Strategy.CONNECTED_CORE:
+        selection = select_connected_core(mol, n_backbone, centrality)
+        ordered = list(selection.selected_atoms + selection.tail_atoms)
+        selection_metadata = {
+            "selection_scores": dict(selection.scores),
+            "selection_reasons": dict(selection.reasons),
+            "backbone_connected": backbone_is_connected(mol, selection.selected_atoms),
+        }
+
+    elif strategy == Strategy.CANONICAL_TRAVERSAL:
+        # ``heavy_indices`` is the atom order of the canonical SMILES parsed
+        # above. This is the paper's "first ten atoms" rule made invariant to
+        # the input string. It is not canonical rank: rank breaks symmetry,
+        # whereas this order is the order RDKit writes the canonical SMILES.
+        ordered = heavy_indices
 
     else:
         raise ValueError(f"Unknown strategy: {strategy}")

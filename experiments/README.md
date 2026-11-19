@@ -10,6 +10,8 @@ python -m experiments.run_pauli_readout_comparison
 python -m experiments.run_robustness_comparison
 python -m experiments.run_graph_pooling_comparison
 python -m experiments.run_multifeature_comparison
+python -m experiments.run_angle_mixture_ablation
+python -m experiments.run_connected_core_comparison
 python -m experiments.run_pca_bbbp_comparison
 ```
 

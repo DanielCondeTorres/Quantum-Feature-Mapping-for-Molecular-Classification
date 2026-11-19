@@ -29,6 +29,13 @@ ablation on a balanced 250-molecule sample, not evidence of universal
 superiority for SMILES order. See the method README and the saved per-split
 results for the protocol and limitations.
 
+A follow-up structural ablation adds a `CONNECTED_CORE` selector that grows the
+ten-atom backbone along molecular bonds, plus a canonical-traversal control
+that separates input-string invariance from source-file ordering. It kept the
+backbone connected in 99.6% of the benchmark molecules but did not improve BBBP
+accuracy over the traversal-dependent baseline; details and limitations are in
+the method README.
+
 ![Worked aspirin example showing the RDKit molecular graph, NetworkX attributes, ten individually selected atoms, and two residual-tail summaries.](docs/assets/rdkit-networkx-10plus2.svg)
 
 ---
