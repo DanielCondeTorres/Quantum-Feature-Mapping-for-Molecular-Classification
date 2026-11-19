@@ -134,24 +134,55 @@ def test_random_traversal(molecules, y, source_features, splits, n_variants=4):
     })
 
 
+def test_row_provenance() -> pd.DataFrame:
+    """Are the row number and the writing style two leaks or one?"""
+    raw = pd.read_csv("BBBP.csv").dropna(subset=["smiles"])
+    rows = []
+    for number, smiles, label in zip(raw["num"], raw["smiles"].astype(str), raw["p_np"]):
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            continue
+        rows.append({
+            "num": number, "p_np": int(label),
+            "aromatic": any(atom.GetIsAromatic() for atom in mol.GetAtoms()),
+            "lowercase": "c" in smiles or "n" in smiles,
+        })
+    frame = pd.DataFrame(rows)
+    frame["high_num"] = frame["num"] > frame["num"].median()
+    aromatic = frame[frame["aromatic"]]
+    return pd.DataFrame([{
+        "auc_row_number_for_label": roc_auc_score(frame["p_np"], frame["num"]),
+        "corr_row_number_with_lowercase_among_aromatic":
+            np.corrcoef(aromatic["num"], aromatic["lowercase"].astype(int))[0, 1],
+        "first_half_fraction_lowercase": aromatic.loc[~aromatic["high_num"], "lowercase"].mean(),
+        "second_half_fraction_lowercase": aromatic.loc[aromatic["high_num"], "lowercase"].mean(),
+        "first_half_fraction_permeable": frame.loc[~frame["high_num"], "p_np"].mean(),
+        "second_half_fraction_permeable": frame.loc[frame["high_num"], "p_np"].mean(),
+    }])
+
+
 def main() -> None:
     frame = pd.read_csv(CSV)
     y = frame["p_np"].to_numpy()
     molecules = frame.copy()
     molecules["mol"] = [Chem.MolFromSmiles(s) for s in frame["smiles"]]
 
-    print("1/3 Notation contradiction...")
+    print("1/4 Row number and writing style: one provenance?")
+    provenance = test_row_provenance()
+    provenance.to_csv(TABLES / "smiles_row_provenance.csv", index=False)
+
+    print("2/4 Notation contradiction...")
     notation = test_notation(molecules, y)
     notation.to_csv(TABLES / "smiles_notation_contradiction.csv", index=False)
 
-    print("2/3 Source versus canonical features...")
+    print("3/4 Source versus canonical features...")
     source_features = _features(frame["smiles"])
     canonical = [Chem.MolToSmiles(m) for m in molecules["mol"]]
     canonical_features = _features(canonical)
     cross = test_cross_representation(source_features, canonical_features, y, _split(y))
     cross.to_csv(TABLES / "smiles_cross_representation.csv", index=False)
 
-    print("3/3 Random SMILES traversals...")
+    print("4/4 Random SMILES traversals...")
     random_test = test_random_traversal(molecules, y, source_features, _split(y))
     random_test.to_csv(TABLES / "smiles_random_traversal.csv", index=False)
 
@@ -175,6 +206,8 @@ def main() -> None:
         "n_molecules": len(frame),
     }, indent=2) + "\n")
 
+    print("\nRow number and writing style (same provenance?):")
+    print(provenance.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     print("\nAromatic molecules written lowercase:")
     print(notation.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     print("\nCross-representation transfer:")
