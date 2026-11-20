@@ -47,6 +47,30 @@ file format but which atom RDKit calls number 0. Writing a `.mol` from the
 canonical SMILES does fix the order (and gives the lower, leakage-free 0.723),
 but that is simply canonicalization in a different container.
 
+### Is it the `c` vs `C=C` notation?
+
+Not directly. `python -m experiments.run_notation_equivalence_check` rewrites
+each molecule in aromatic lowercase and in Kekulé uppercase while keeping the
+non-canonical traversal (`tables/notation_equivalence.csv`):
+
+| Check | Fraction of molecules |
+|---|---:|
+| Aromatic rewrite gives the same features as Kekulé rewrite | **88.4%** |
+| Source equals aromatic rewrite | 59.6% |
+| Source equals Kekulé rewrite | 57.2% |
+
+RDKit sanitizes both notations to the same aromatic bonds (bond order 1.5), so
+the circuit sees the same elements and bond orders — the words `c` and `C=C`
+never enter the quantum features. When the two rewrites differ (11.6%), it is
+because RDKit's non-canonical writer chose a different *atom traversal*, not
+because of the bond notation.
+
+So the precise statement is: the model reads **atom order**, which is a side
+effect of how the source string was written. The aromatic/Kekulé flags and the
+row number are correlated proxies for the same provenance, but the circuit's
+input channel is the atom numbering. A `.mol` preserves that numbering, hence
+the identical score.
+
 ## Files
 
 - `tables/mol_equivalence.csv` — the bit-hash identity checks.
