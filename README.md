@@ -54,6 +54,7 @@ the method README.
 │   └── tests/            # Unit and invariance tests
 ├── docs/
 │   ├── assets/           # README figures, including the BBBP EDA plots
+│   ├── METHODOLOGY.md    # What each model sees, circuits, metrics, leakage
 │   ├── DEVELOPMENT.md    # Layer structure and how to add an experiment
 │   ├── QUANTUM_FEATURES.md  # How quantum features are extracted, step by step
 │   ├── METRICS_AND_MODELS.md  # RF vs atom selection; Acc, F1, AUC, nested C

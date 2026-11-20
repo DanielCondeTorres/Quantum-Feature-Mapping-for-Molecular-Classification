@@ -9,6 +9,25 @@ directly from here.
 The qubit convention is little-endian, matching Qiskit: qubit ``i`` is bit
 ``i`` of the basis-state index. ``layers`` repeats the whole data-upload
 block (data re-uploading); one layer is the established embedding.
+
+WHAT THE QUANTUM MODEL ACTUALLY SEES
+------------------------------------
+It does not look at a drawing of the molecule. It receives local numbers
+computed by RDKit and turns each of them into a rotation angle:
+
+  * one number per selected atom  -> Ry(theta_atom)  on qubits q0..q9;
+  * one number per bond           -> Rxx(theta_bond) between the two qubits;
+  * two global summaries          -> Ry angles on the tail qubits q10/q11.
+
+The 12 qubits start at |0...0>. The rotations build a complex state with
+2**12 = 4096 amplitudes. Those amplitudes interfere, so the state encodes
+*combinations* of atom properties and bonds, not the numbers one by one.
+Measurement then compresses that state to 78 Pauli moments (Z_i and Z_iZ_j).
+
+Compare with the classical arm: a random forest receives 13 whole-molecule
+scalars (MW, TPSA, logP, ...) and splits on them. The quantum arm instead
+receives per-atom and per-bond values and applies a fixed nonlinear map to
+them. Both consume classical chemistry; they differ in the representation.
 """
 
 from __future__ import annotations
@@ -98,14 +117,18 @@ def statevector(
     if assignment is None:
         raise ValueError(f"RDKit could not parse SMILES: {smiles!r}")
 
+    # All twelve qubits start in |0>; basis-state index i means qubit 0 is bit 0.
     state = np.zeros(1 << N_QUBITS, dtype=np.complex128)
     state[0] = 1.0
+    # Atoms beyond the ten selected ones are compressed into the two tail wires.
     tail = assignment.tail_indices
 
     if size_channel != "none" and tail_mode != "global":
         raise ValueError("size_channel is only supported with tail_mode='global'")
     size_angle = 0.0 if size_channel == "none" else molecular_size_angle(assignment.mol, size_channel)
 
+    # One pass uploads the molecule once. More passes (data re-uploading)
+    # apply the same angles again, enriching the function the map can express.
     for _ in range(layers):
         if prop == "multi_physchem":
             from .multifeature import multifeature_gate_operations
@@ -125,12 +148,17 @@ def statevector(
             channels = tuple(prop.removeprefix("angle_mix:").split("+"))
             atom_properties = mixed_atom_angles(assignment, channels)
         else:
+            # One local chemical number per atom (Pauling, TPSA, charge, ...).
             atom_properties = get_atom_properties(assignment, prop=prop)
+
+        # STAGE 1 - atomic input: Ry(angle) on q0..q9, one per selected atom.
+        # The angle is the only place the atom's chemistry enters the circuit.
         for qubit, atom_idx in enumerate(assignment.backbone_indices):
             value = atom_properties[atom_idx]
             angle = ALPHA * value**2 if prop == "pauling_en" else value
             _apply_ry(state, angle, qubit)
 
+        # STAGE 2 - tail: two global scalars summarize all unselected atoms.
         if tail and tail_mode == "global":
             if tail_angles is None:
                 summary = summarize_tail(assignment.mol, assignment.backbone_indices)
@@ -164,6 +192,9 @@ def statevector(
         elif tail_mode not in {"global", "sum", "stats", "pharm"}:
             raise ValueError(f"Unknown tail mode: {tail_mode}")
 
+        # STAGE 3 - topology: Rxx(bond_order / 2) entangles the qubits at each
+        # bond. This is where connectivity enters; tail-tail bonds are only
+        # summarized, never emitted as individual gates.
         tail_set = set(tail)
         for bond in assignment.mol.GetBonds():
             left, right = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()

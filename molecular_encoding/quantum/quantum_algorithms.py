@@ -74,7 +74,10 @@ def fidelity_kernel(states: np.ndarray, *, center: bool = False) -> np.ndarray:
     states = np.asarray(states)
     if states.ndim != 2:
         raise ValueError("states must have shape (n_molecules, 2**n_qubits)")
+    # S S† overlaps every state with every other state. Unlike the Z-moment
+    # readout, this keeps the complex phases of all 4096 amplitudes.
     overlaps = states @ states.conj().T
+    # Born-rule fidelity between the two encoded quantum states.
     kernel = np.abs(overlaps) ** 2
     if center:
         n = kernel.shape[0]
@@ -90,6 +93,9 @@ def pauli_expectation(state: np.ndarray, operators: dict[int, str]) -> float:
     is real for any Hermitian Pauli string. Index arithmetic avoids building
     the dense 4096x4096 operator matrix.
     """
+    # Pauli expectation <psi|P|psi>. We never build the 4096x4096 matrix:
+    # X and Y flip the bit of their qubit; Y also contributes +-i phases,
+    # while Z multiplies by (-1)^bit. Index XOR gives the partner amplitude.
     indices = np.arange(state.size)
     flip_mask = 0
     phase = np.ones(state.size, dtype=np.complex128)
