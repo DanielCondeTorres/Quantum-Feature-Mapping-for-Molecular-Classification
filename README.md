@@ -60,7 +60,8 @@ the method README.
 ├── analysis/
 │   ├── bbbp_feature_audit/  # Molecules, RDKit features, plots and leakage audit
 │   ├── balanced_5050/       # Clean 50/50 CSVs: old versus new techniques
-│   └── mol_order/           # MOL-file version of the primitive first-atom encoding
+│   ├── mol_order/           # MOL-file version of the primitive first-atom encoding
+│   └── final_comparison/    # Master table: all feature families on the clean 50/50 set
 ├── data/bbbp_mol/                   # 500 generated .mol files + label mapping
 ├── BBBP_balanced_50_50.csv          # 125/125, no original row number
 ├── BBBP_balanced_50_50_canonical.csv  # Same, with canonical SMILES
