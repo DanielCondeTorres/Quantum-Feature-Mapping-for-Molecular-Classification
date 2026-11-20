@@ -24,6 +24,7 @@ python -m experiments.run_smiles_style_audit
 python -m experiments.run_smiles_causality_test
 python -m experiments.run_mol_file_comparison
 python -m experiments.run_notation_equivalence_check
+python -m experiments.run_mol_random_start
 python -m experiments.run_pca_bbbp_comparison
 ```
 

@@ -71,6 +71,24 @@ row number are correlated proxies for the same provenance, but the circuit's
 input channel is the atom numbering. A `.mol` preserves that numbering, hence
 the identical score.
 
+### Starting at a random atom of the MOL block
+
+`python -m experiments.run_mol_random_start` picks a random heavy atom as q0
+and walks the MOL atom block cyclically, with five different seeds
+(`tables/mol_random_start_*.csv`, `figures/mol_random_start.png`):
+
+| Arm | Acc, C=10 | AUC, C=10 |
+|---|---:|---:|
+| Original first atom of the MOL block | 0.748 | **0.836** |
+| Random start, mean over 5 seeds | 0.683 | 0.751 |
+| Canonical traversal (reference) | 0.657 | 0.723 |
+
+Per-seed AUC ranges from 0.720 to 0.777. Randomizing the starting atom removes
+most of the advantage (0.836 → 0.751) but not all: a cyclic rotation still
+preserves the *relative* order of the source atoms, so a weaker provenance
+signal survives. This is direct evidence that the specific atom numbered 0 is
+the main channel used by the primitive encoding.
+
 ## Files
 
 - `tables/mol_equivalence.csv` — the bit-hash identity checks.
