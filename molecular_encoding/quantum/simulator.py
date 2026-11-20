@@ -79,16 +79,22 @@ def statevector(
     size_channel: str = "none",
     size_weight: float = 0.4,
     layers: int = 1,
+    *,
+    assignment=None,
 ) -> np.ndarray:
     """Return the exact complex state vector for one molecule.
 
     ``layers > 1`` re-uploads the same molecular angles several times, which
     increases the accessible function frequencies of the feature map. The
     default of one layer reproduces the established embedding exactly.
+
+    An already-built ``QubitAssignment`` can be supplied (e.g. from a parsed
+    MOL file). In that case ``smiles`` and ``strategy`` are ignored.
     """
     if layers < 1:
         raise ValueError("layers must be a positive integer")
-    assignment = assign_qubits(smiles, strategy=strategy, n_backbone=N_BACKBONE, n_tail=N_TAIL)
+    if assignment is None:
+        assignment = assign_qubits(smiles, strategy=strategy, n_backbone=N_BACKBONE, n_tail=N_TAIL)
     if assignment is None:
         raise ValueError(f"RDKit could not parse SMILES: {smiles!r}")
 
@@ -188,11 +194,14 @@ def statevector_probabilities(
     size_channel: str = "none",
     size_weight: float = 0.4,
     layers: int = 1,
+    *,
+    assignment=None,
 ) -> np.ndarray:
     """Return exact measurement probabilities for the 10+2 circuit."""
     state = statevector(
         smiles, strategy, prop=prop, tail_mode=tail_mode, tail_angles=tail_angles,
         size_channel=size_channel, size_weight=size_weight, layers=layers,
+        assignment=assignment,
     )
     probabilities = np.abs(state) ** 2
     return probabilities / probabilities.sum()
@@ -209,10 +218,12 @@ def statevector_features(
     size_channel: str = "none",
     size_weight: float = 0.4,
     layers: int = 1,
+    assignment=None,
 ) -> np.ndarray:
     """Simulate one molecule and extract a selected measurement readout."""
     probabilities = statevector_probabilities(
         smiles, strategy, prop=prop, tail_mode=tail_mode, tail_angles=tail_angles,
         size_channel=size_channel, size_weight=size_weight, layers=layers,
+        assignment=assignment,
     )
     return features_from_probabilities(probabilities, readout=readout)[0]

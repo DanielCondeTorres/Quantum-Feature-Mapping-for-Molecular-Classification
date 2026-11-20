@@ -22,6 +22,7 @@ python -m experiments.run_quantum_pca_audit
 python -m experiments.run_balanced_dataset_comparison
 python -m experiments.run_smiles_style_audit
 python -m experiments.run_smiles_causality_test
+python -m experiments.run_mol_file_comparison
 python -m experiments.run_pca_bbbp_comparison
 ```
 
