@@ -21,6 +21,40 @@ are compressed into two global tail channels. The full mathematical definition,
 assumptions, and reproducibility details are in
 [`molecular_encoding/README.md`](molecular_encoding/README.md).
 
+## Full BBBP data cleaning
+
+The full-dataset cleaning request is implemented in
+[`experiments/clean_bbbp_full.py`](experiments/clean_bbbp_full.py) and runs with
+`python -m experiments.clean_bbbp_full`. It processes all 2,039 source rows,
+not the 250-molecule subset, and writes [`data/BBBP_clean_full.csv`](data/BBBP_clean_full.csv),
+the stage-by-stage [`cleaning log`](data/BBBP_clean_log.txt), and
+[`cleaning settings`](data/BBBP_clean_settings.json) (including the RDKit
+version). The present run parsed all rows, stripped extra fragments from 105,
+excluded 22 rows from 11 structures with conflicting labels, collapsed 62
+duplicate rows, and retained 1,955 unique structures. All ten elements in the
+cleaned data are covered by the Pauling table; the script fails loudly if a
+new element is missing rather than silently applying its fallback value.
+
+For example, RDKit removes the isolated chloride from propranolol before
+canonicalization, so it cannot take the first backbone qubit. The parent
+structure itself has contradictory labels in this source and is excluded; no
+label is selected without external evidence. The cleaned CSV flags whether
+each retained molecule belongs to the original 250-molecule benchmark. The
+current log reports 250/250 canonical structures matched, though this flag is
+about structural matching: rows that are conflicting in the full dataset are
+excluded from the cleaned output. Formal charges are retained; stereo is
+preserved in isomeric canonical SMILES; tautomers are not merged and possible
+cross-label tautomer/stereoisomer groups are flagged. Heavy-atom count,
+heavy-atom bond count, and the count beyond ten are included.
+
+![RDKit/NetworkX worked example: the full molecular graph is parsed, ten atoms are assigned individual backbone wires, and residual/context information is encoded in two tail wires.](docs/assets/rdkit-networkx-10plus2.svg)
+
+The chemistry decisions, caveats, and methods-ready wording—including why
+the current circuit cannot distinguish stereoisomers and why canonical atom
+ordering is preferable for reproducible chemistry-aware assignment—are in
+[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md#11-full-dataset-cleaning). The
+cleaner intentionally keeps the source SMILES and source row for traceability.
+
 An initial controlled BBBP comparison using the current 78-feature $Z_i+Z_iZ_j$
 readout found that this new selector did **not** outperform selection by
 source-SMILES order in the tested pipeline (mean accuracy 0.632 vs. 0.732
