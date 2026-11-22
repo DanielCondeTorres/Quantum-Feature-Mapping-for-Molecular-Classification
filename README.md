@@ -64,7 +64,8 @@ the method README.
 │   ├── balanced_5050/       # Clean 50/50 CSVs: old versus new techniques
 │   ├── mol_order/           # MOL-file version of the primitive first-atom encoding
 │   └── final_comparison/    # Master table: all feature families on the clean 50/50 set
-├── data/bbbp_mol/                   # 500 generated .mol files + label mapping
+├── data/bbbp_mol/                   # raw input + 500 generated .mol files
+├── data/BBBP_clean_full.csv         # 1955 cleaned structures from the raw dataset
 ├── BBBP_balanced_50_50.csv          # 125/125, no original row number
 ├── BBBP_balanced_50_50_canonical.csv  # Same, with canonical SMILES
 ├── experiments/          # Shared tools and reproducible benchmark entry points

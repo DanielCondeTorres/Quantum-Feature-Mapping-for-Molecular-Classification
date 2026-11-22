@@ -22,6 +22,57 @@ are used for the leakage audits:
   removed, source SMILES kept verbatim;
 - `BBBP_balanced_50_50_canonical.csv`: the same molecules with canonical SMILES.
 
+### 1.1 Full-dataset cleaning
+
+`python -m experiments.clean_bbbp_full` processes the complete raw file
+`data/bbbp_mol/bbbp.csv` (2039 rows, columns `SMILES` and `label`) into
+`data/BBBP_clean_full.csv`. The per-stage counts are saved in
+`data/BBBP_clean_log.txt` and the decisions in
+`data/BBBP_clean_settings.json` together with the RDKit version (2024.03.5).
+
+| Stage | Effect | Rows |
+|---|---|---:|
+| Input | raw file | 2039 |
+| Parse failures | none | 2039 |
+| Salt stripping | 105 strings had extra fragments; largest organic fragment kept | 2039 |
+| Canonicalization | isomeric canonical SMILES, stereo preserved | 2039 |
+| Conflicting labels | 11 structures (22 rows) excluded | 2017 |
+| Duplicate collapse | 62 rows removed | **1955** |
+
+**Decisions.** Salts and solvents are removed by keeping the fragment with the
+most heavy atoms; ties are broken by heteroatom count and then canonical
+string. This matters: the first entry, propranolol, is written as
+`[Cl].CC(C)NCC(O)COc1cccc2ccccc12`, and without stripping it the chloride
+counterion would occupy qubit 0. Formal charges are **kept, never
+neutralized**: a protonated amine is a different permeating species than its
+free base, so neutralization would silently change the label we are trying to
+predict. A `formal_charge` column is provided (79 structures remain charged
+after salt stripping). Tautomers are **not canonicalized**; RDKit's
+`TautomerEnumerator` is used only to group structures and flag groups whose
+members have opposite labels.
+
+All ten elements present (C, O, N, Cl, S, F, Br, P, I, B) are covered by the
+electronegativity table; the script asserts this explicitly instead of relying
+on the table's `_default` fallback. The output adds `heavy_atom_count`,
+`bond_count` (heavy-atom bonds only, matching the circuit's implicit
+hydrogens), `atoms_beyond_10`, `in_previous_250`, and two audit flags.
+
+**Flags for the paper.** Eleven structures have contradictory labels, including
+propranolol and aspirin; they are excluded because no external evidence was
+available to prefer one label. Six rows belong to stereoisomer skeletons with
+opposite labels and eight rows to tautomer groups with opposite labels (two of
+the latter are xanthine tautomers such as
+`Cn1c(=O)c2[nH]cnc2n(C)c1=O` versus `Cn1c(=O)c2nc[nH]c2n(C)c1=O`). These
+are retained but flagged. The stereoisomer cases are especially important:
+the circuit uses electronegativity and bond order, so enantiomers produce
+identical feature vectors. If two stereoisomers carry opposite labels the map
+cannot distinguish them, and a scaffold-held-out evaluation is the honest way
+to expose that limitation.
+
+All 250 molecules of the previous balanced benchmark survive the cleaning,
+with no label inconsistencies (`in_previous_250 = True`), so the earlier
+results remain reproducible on the cleaned file.
+
 ## 2. What the classical model sees
 
 The classical arm uses **whole-molecule descriptors**. For a molecule, RDKit

@@ -26,6 +26,7 @@ python -m experiments.run_mol_file_comparison
 python -m experiments.run_notation_equivalence_check
 python -m experiments.run_mol_random_start
 python -m experiments.run_final_comparison
+python -m experiments.clean_bbbp_full
 python -m experiments.run_pca_bbbp_comparison
 ```
 
