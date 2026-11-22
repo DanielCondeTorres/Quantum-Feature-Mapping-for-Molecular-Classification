@@ -73,6 +73,16 @@ All 250 molecules of the previous balanced benchmark survive the cleaning,
 with no label inconsistencies (`in_previous_250 = True`), so the earlier
 results remain reproducible on the cleaned file.
 
+`python -m experiments.run_full_dataset_scaffold` evaluates every feature
+family on the 1955 structures with five Bemis-Murcko scaffold folds
+(`analysis/full_dataset/`). A practical warning came out of it: the
+`source_row` column retained for tracing reaches AUC 0.940 because the cleaned
+CSV preserves the raw file order. It is an audit column only and must be
+dropped before modelling; rows should be shuffled for any downstream split.
+Scaffold grouping alone does not remove this signal, because whole provenance
+blocks can land in the same fold. See `analysis/full_dataset/README.md` for
+the full comparison and the inner-C caveat.
+
 ## 2. What the classical model sees
 
 The classical arm uses **whole-molecule descriptors**. For a molecule, RDKit
