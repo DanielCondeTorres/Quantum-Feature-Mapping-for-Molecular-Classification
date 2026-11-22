@@ -68,6 +68,18 @@ matrices, a PCA projection of the 78 Z/ZZ features, and source-string length/
 aromatic notation versus label and held-out decision score. These plots are
 descriptive, not proof of causal leakage or class separability.
 
+Here, **canonical traversal** means: RDKit parses the molecule, writes a
+canonical SMILES, reparses that string, and assigns q0–q9 to the first ten
+heavy atoms in the resulting atom traversal (the remaining atoms go to the
+tail summary). Thus the same molecular graph gets a reproducible traversal
+regardless of the input SMILES spelling. It is still a positional “first ten”
+rule: canonicalization does not rank atoms by BBB relevance, and canonical
+SMILES is a deterministic serialization, not a unique chemically privileged
+ordering. By contrast, source-SMILES order uses the first ten atoms of the
+original input string, while `CHEMICAL_COVERAGE` selects atoms by graph
+environments and roles before assigning qubits. Since the 78 Z/ZZ outputs are
+indexed by qubit, these three assignments can yield different feature vectors.
+
 Latest run: 1,955 molecules, 1,016 Bemis–Murcko groups (acyclic molecules
 grouped together), 1,494 BBB-positive and 461 BBB-negative. Each outer fold
 holds out roughly one fifth of molecules, with scaffolds kept separate.
