@@ -29,6 +29,7 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 
 from molecular_encoding.chemistry.properties import PAULING_EN
+from molecular_encoding.chemistry.fragment_standardization import choose_parent_fragment
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -38,6 +39,7 @@ OUT_DIR = Path("data")
 CLEAN_CSV = OUT_DIR / "BBBP_clean_full.csv"
 LOG_TXT = OUT_DIR / "BBBP_clean_log.txt"
 SETTINGS_JSON = OUT_DIR / "BBBP_clean_settings.json"
+FRAGMENT_AUDIT_CSV = OUT_DIR / "BBBP_fragment_audit.csv"
 
 
 def strip_salts(mol: Chem.Mol) -> tuple[Chem.Mol, bool]:
@@ -119,9 +121,14 @@ def main() -> None:
 
     # Stage 2/3 - strip salts and canonicalize.
     rows = []
+    fragment_audit_rows = []
     n_salts = 0
     for row_idx, source, label, mol in parsed:
-        parent, had_salt = strip_salts(mol)
+        parent, audit = choose_parent_fragment(mol)
+        for frag in audit:
+            fragment_audit_rows.append({"source_row": row_idx, "source_smiles": source,
+                                        "label": label, **frag})
+        had_salt = len(audit) > 1
         n_salts += int(had_salt)
         canonical = Chem.MolToSmiles(parent, canonical=True, isomericSmiles=True)
         heavy = [atom for atom in parent.GetAtoms() if atom.GetAtomicNum() > 1]
@@ -143,6 +150,9 @@ def main() -> None:
         })
     log(f"Stage 2 - salt/solvent fragments stripped: {n_salts} (kept largest fragment)")
     working = pd.DataFrame(rows)
+    pd.DataFrame(fragment_audit_rows).to_csv(FRAGMENT_AUDIT_CSV, index=False)
+    n_ambiguous = int(pd.DataFrame(fragment_audit_rows).query("manual_review")["source_row"].nunique()) if fragment_audit_rows else 0
+    log(f"Fragment audit: {FRAGMENT_AUDIT_CSV}; ambiguous parent rows flagged: {n_ambiguous}")
 
     # Stage 4 - element coverage against Pauling electronegativity table.
     elements = set()
@@ -229,7 +239,7 @@ def main() -> None:
         "previous_benchmark_flag": str(PREVIOUS_250),
     }
     SETTINGS_JSON.write_text(json.dumps(settings, indent=2) + "\n")
-    log(f"\nSaved: {CLEAN_CSV}, {LOG_TXT}, {SETTINGS_JSON}")
+    log(f"\nSaved: {CLEAN_CSV}, {LOG_TXT}, {SETTINGS_JSON}, {FRAGMENT_AUDIT_CSV}")
 
 
 if __name__ == "__main__":

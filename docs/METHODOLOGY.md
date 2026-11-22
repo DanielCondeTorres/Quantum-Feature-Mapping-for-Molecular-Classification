@@ -40,8 +40,15 @@ are used for the leakage audits:
 | Duplicate collapse | 62 rows removed | **1955** |
 
 **Decisions.** Salts and solvents are removed by keeping the fragment with the
-most heavy atoms; ties are broken by heteroatom count and then canonical
-string. This matters: the first entry, propranolol, is written as
+most heavy atoms; a carbon-containing fragment is preferred over an inorganic
+counterion, then ties are broken by heteroatom count and canonical isomeric
+string. Every fragment is recorded in `data/BBBP_fragment_audit.csv`, including
+the selected parent, charge, size, and whether multiple fragments tied on the
+chemical criteria and therefore need manual review (two source rows in this
+run). This is a transparent heuristic, not a universal parent-selection rule:
+datasets containing two comparably sized organic components should be
+reviewed against source/compound records. This matters: the first entry,
+propranolol, is written as
 `[Cl].CC(C)NCC(O)COc1cccc2ccccc12`, and without stripping it the chloride
 counterion would occupy qubit 0. Formal charges are **kept, never
 neutralized**: a protonated amine is a different permeating species than its
@@ -68,6 +75,33 @@ the circuit uses electronegativity and bond order, so enantiomers produce
 identical feature vectors. If two stereoisomers carry opposite labels the map
 cannot distinguish them, and a scaffold-held-out evaluation is the honest way
 to expose that limitation.
+
+The full-data diagnostics show source-SMILES order above canonical traversal
+and graph-based selection, but this must not be interpreted as evidence that
+source traversal is chemically better. In the cleaned set, source-SMILES
+length and lowercase aromatic-character count are strongly associated with
+the label (point-biserial $r=-0.31$ and $r=-0.39$, respectively). These
+univariate associations are consistent with serialization/provenance signal
+being available to a position-sensitive model; they do not prove causality.
+Canonical traversal changes that surface form, while randomized traversals
+change it again, and the measured scores fall. A suitable follow-up is a
+pre-registered notation-invariance test: generate multiple equivalent
+randomized SMILES per molecule, evaluate prediction variance under scaffold
+splits, and compare against source-style-only baselines. Do not use raw source
+order as the preferred scientific representation unless its robustness is
+demonstrated.
+
+**Improvement recommendation.** Preserve specified stereo in the dataset and
+add a separate stereochemistry-aware circuit ablation: encode tetrahedral
+chirality at stereogenic centers and E/Z configuration on stereogenic bonds,
+with a matched stereo-blind control. Audit stereoisomer pairs with reliable
+labels and use scaffold-held-out evaluation. If 3D conformational effects are
+claimed, use a documented conformer ensemble and aggregate geometry features;
+do not rely on one arbitrary conformer. For fragment handling, publish and
+inspect the fragment audit rather than silently discarding ambiguous organic
+components. Keep formal charges and source structures; if protonation
+standardization is later introduced, declare a pH policy and retain both the
+raw and standardized forms.
 
 All 250 molecules of the previous balanced benchmark survive the cleaning,
 with no label inconsistencies (`in_previous_250 = True`), so the earlier

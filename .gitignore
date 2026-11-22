@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 .ipynb_checkpoints/
 *.png
+!Results/*.png
 !molecular_encoding/*.png
 !docs/assets/*.png
 !analysis/**/*.png
