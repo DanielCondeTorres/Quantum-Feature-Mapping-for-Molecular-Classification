@@ -55,6 +55,38 @@ ordering is preferable for reproducible chemistry-aware assignment—are in
 [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md#11-full-dataset-cleaning). The
 cleaner intentionally keeps the source SMILES and source row for traceability.
 
+### Full-data model diagnostics
+
+Run `python -m experiments.run_full_dataset_diagnostics` to reproduce the
+full-data, five-fold scaffold-held-out comparison and out-of-fold diagnostics.
+It compares source-string order, canonical traversal, `CHEMICAL_COVERAGE`,
+three randomized SMILES serializations, and a full-state fidelity quantum
+kernel with precomputed SVM. Every molecule receives one test prediction;
+confusion counts, per-fold train/test counts, per-molecule predictions,
+settings, and figures are written to `Results/`. Figures include confusion
+matrices, a PCA projection of the 78 Z/ZZ features, and source-string length/
+aromatic notation versus label and held-out decision score. These plots are
+descriptive, not proof of causal leakage or class separability.
+
+Latest run: 1,955 molecules, 1,016 Bemis–Murcko groups (acyclic molecules
+grouped together), 1,494 BBB-positive and 461 BBB-negative. Each outer fold
+holds out roughly one fifth of molecules, with scaffolds kept separate.
+
+| Representation | Accuracy | F1 | ROC-AUC |
+|---|---:|---:|---:|
+| Source SMILES order | 0.864 ± 0.027 | 0.912 ± 0.019 | 0.889 ± 0.030 |
+| Canonical traversal | 0.830 ± 0.026 | 0.891 ± 0.020 | 0.810 ± 0.032 |
+| Chemical coverage | 0.803 ± 0.031 | 0.874 ± 0.023 | 0.784 ± 0.039 |
+| Randomized SMILES (three seeds; range) | 0.787–0.797 | 0.864–0.872 | 0.737–0.760 |
+| Fidelity quantum kernel + SVM | 0.815 ± 0.029 | 0.881 ± 0.021 | 0.811 ± 0.032 |
+
+The strong source-order score does not establish that atom order is chemically
+superior: it is serialization-sensitive, and the source dataset has known
+row/notation provenance patterns. The dataset is imbalanced, so inspect the
+confusion matrices and per-molecule predictions alongside accuracy. This run
+uses fixed `C=10` and exact NumPy statevectors; the fidelity kernel is a
+classical simulation, not a hardware quantum-advantage claim.
+
 An initial controlled BBBP comparison using the current 78-feature $Z_i+Z_iZ_j$
 readout found that this new selector did **not** outperform selection by
 source-SMILES order in the tested pipeline (mean accuracy 0.632 vs. 0.732

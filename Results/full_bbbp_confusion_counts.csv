@@ -1,0 +1,29 @@
+method,true_label,predicted_label,count
+Source SMILES order,0,0,309
+Source SMILES order,0,1,152
+Source SMILES order,1,0,118
+Source SMILES order,1,1,1376
+Canonical traversal,0,0,254
+Canonical traversal,0,1,207
+Canonical traversal,1,0,129
+Canonical traversal,1,1,1365
+Chemical coverage,0,0,221
+Chemical coverage,0,1,240
+Chemical coverage,1,0,151
+Chemical coverage,1,1,1343
+Randomized SMILES seed 11,0,0,198
+Randomized SMILES seed 11,0,1,263
+Randomized SMILES seed 11,1,0,138
+Randomized SMILES seed 11,1,1,1356
+Randomized SMILES seed 23,0,0,205
+Randomized SMILES seed 23,0,1,256
+Randomized SMILES seed 23,1,0,144
+Randomized SMILES seed 23,1,1,1350
+Randomized SMILES seed 37,0,0,204
+Randomized SMILES seed 37,0,1,257
+Randomized SMILES seed 37,1,0,166
+Randomized SMILES seed 37,1,1,1328
+Quantum fidelity kernel + SVM,0,0,243
+Quantum fidelity kernel + SVM,0,1,218
+Quantum fidelity kernel + SVM,1,0,148
+Quantum fidelity kernel + SVM,1,1,1346

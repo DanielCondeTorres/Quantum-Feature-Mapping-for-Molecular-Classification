@@ -1,0 +1,46 @@
+{
+  "dataset": "data/BBBP_clean_full.csv",
+  "n_molecules": 1955,
+  "class_counts": {
+    "1": 1494,
+    "0": 461
+  },
+  "scaffolds": 1016,
+  "outer_cv": "5-fold StratifiedGroupKFold by Bemis-Murcko scaffold; acyclic together",
+  "test_predictions": "each molecule predicted once out-of-fold",
+  "fixed_C": 10,
+  "randomized_smiles_seeds": [
+    11,
+    23,
+    37
+  ],
+  "quantum_kernel": "fidelity |<psi_i|psi_j>|^2 on full statevectors; precomputed SVC",
+  "train_test_sizes": [
+    {
+      "fold": 1,
+      "train": 1639,
+      "test": 316
+    },
+    {
+      "fold": 2,
+      "train": 1622,
+      "test": 333
+    },
+    {
+      "fold": 3,
+      "train": 1472,
+      "test": 483
+    },
+    {
+      "fold": 4,
+      "train": 1506,
+      "test": 449
+    },
+    {
+      "fold": 5,
+      "train": 1581,
+      "test": 374
+    }
+  ],
+  "caveat": "PCA is descriptive; randomized serialization arms use one deterministic randomized traversal per molecule and seed; no nested hyperparameter tuning in this diagnostic"
+}
