@@ -1,0 +1,31 @@
+{
+  "dataset": "data/BBBP_clean_full.csv",
+  "n": 1955,
+  "class_counts": {
+    "1": 1494,
+    "0": 461
+  },
+  "folds": "5-fold StratifiedGroupKFold by Bemis-Murcko scaffold; acyclic together",
+  "seed": 42,
+  "quantum_readout": "78 Zi/ZiZj, exact NumPy statevector",
+  "fixed_C": 10,
+  "pca": "StandardScaler + PCA fitted within each outer training fold; component counts 2,4,8,13",
+  "notation_length": "source SMILES character count, isolated artifact baseline",
+  "descriptors": [
+    "MolWt",
+    "MolLogP",
+    "TPSA",
+    "HBD",
+    "HBA",
+    "RotB",
+    "AromaticRings",
+    "FractionCSP3",
+    "FormalCharge",
+    "RingCount",
+    "HeavyAtomCount",
+    "MolarRefractivity",
+    "NumHeteroatoms"
+  ],
+  "multi_physchem_definition": "multi-axis Pauling/Gasteiger/TPSA/Crippen/donor-acceptor/aromaticity upload; differs from scalar angle mixtures",
+  "caveat": "exploratory repeated model comparisons; no independent external test; source length is a writing-artifact diagnostic"
+}

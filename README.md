@@ -99,6 +99,32 @@ confusion matrices and per-molecule predictions alongside accuracy. This run
 uses fixed `C=10` and exact NumPy statevectors; the fidelity kernel is a
 classical simulation, not a hardware quantum-advantage claim.
 
+#### Property/PCA follow-up
+
+Run `python -m experiments.run_full_dataset_chemistry_pca` to compare Pauling,
+TPSA and the existing multi-axis `multi_physchem` map against 13 RDKit
+descriptors, fold-fitted PCA (2/4/8/13 PCs), and a source-string-length-only
+artifact baseline. All use the same five scaffold-held-out folds and fixed
+RBF-SVM `C=10`; scaling and PCA are fit inside each training fold. Results
+are in `Results/chemistry_pca_summary.csv`; the held-out projection is
+`Results/rdkit_descriptor_pca.png`. In this run the quantum chemistry arms do
+not beat all 13 descriptors. Source string length alone has accuracy 0.783
+but ROC-AUC 0.585, so length by itself does not explain the source-order AUC;
+the cause may involve richer serialization/position interactions and is not
+established. PCA with 8/13 components approaches the full-descriptor baseline,
+while 2 PCs lose substantial AUC, so aggressive compression is not supported.
+This is exploratory and needs an external validation set.
+
+The design draws on graph message passing, which represents atoms/bonds and
+aggregates molecular neighborhoods ([Gilmer et al., 2017](https://proceedings.mlr.press/v70/gilmer17a.html));
+data re-uploading as a way to expand encoding frequencies
+([Pérez-Salinas et al., 2020](https://quantum-journal.org/papers/q-2020-02-06-226/));
+and evidence that fidelity kernels can concentrate and become poorly
+discriminative ([Thanasilp et al., 2024](https://www.nature.com/articles/s41467-024-49287-w)).
+Thus the fidelity kernel is a candidate representation, not a demonstrated
+advantage; this repository computes it using exact classical statevector
+simulation and makes no hardware-speedup claim.
+
 An initial controlled BBBP comparison using the current 78-feature $Z_i+Z_iZ_j$
 readout found that this new selector did **not** outperform selection by
 source-SMILES order in the tested pipeline (mean accuracy 0.632 vs. 0.732

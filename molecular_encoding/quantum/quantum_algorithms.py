@@ -8,9 +8,9 @@ algorithms** that produce features for an ordinary classical estimator:
     The Gram matrix ``K_ij = |<psi_i|psi_j>|^2`` between encoded quantum
     states. This uses the *full* Hilbert-space amplitudes, including phases,
     instead of compressing each molecule to 78 Z-basis moments. Feed it to
-    ``SVC(kernel="precomputed")`` or kernel ridge regression. This is the most
-    promising route to a genuine quantum advantage: the feature space has
-    ``2^12 = 4096`` dimensions and quantum states represent it natively.
+    ``SVC(kernel="precomputed")`` or kernel ridge regression. This is an
+    alternative representation, not evidence of quantum advantage: these
+    statevectors and kernels are simulated classically in this repository.
 
 ``pauli_feature_matrix``
     Expectation values of X, Y and Z Pauli strings on one and two qubits,
@@ -68,8 +68,10 @@ def encode_states(
 def fidelity_kernel(states: np.ndarray, *, center: bool = False) -> np.ndarray:
     """Quantum fidelity kernel ``K_ij = |<psi_i|psi_j>|**2``.
 
-    With ``center=True`` the kernel is double-centered in feature space,
-    ``K_c = (I - 11^T/n) K (I - 11^T/n)``, as some kernel methods expect.
+    With ``center=True`` the full matrix is double-centered. Do not apply this
+    option before train/test splitting: held-out inputs would affect training
+    means. The current benchmark uses the uncentered normalized fidelity
+    kernel; any future centering must use training-block means only.
     """
     states = np.asarray(states)
     if states.ndim != 2:
