@@ -1,216 +1,524 @@
-# Quantum Feature Mapping for Molecular Classification
-### Evaluating Exponential Expressivity in NISQ Hardware
+# Full BBBP dataset for the 10+2 quantum feature map
 
-**Abdul Hannan · Maral Mahmoudi Kamelabad · Anna Kazakova Lindegren · Robert Loredo**
+Branch **`analysis_features`**, based on **`main`**.
 
-> Presented at IEEE Quantum Week 2026 (QCE26). This repository contains all experimental notebooks used to produce the results, figures, and tables in the paper.
+This branch turns the raw DeepChem BBBP table into a modelling-ready dataset for
+the paper, and exposes the 10+2 embedding in a form that can be inspected line
+by line. It is deliberately self-contained: the cleaning code and the circuit
+simulator depend only on RDKit, NumPy and pandas — not on the experiment
+package used in the `dct_rdkit` branch.
 
----
-
-## Overview
-
-This work introduces the **10+2 Structure-Preserving Quantum Feature Map** — a fixed-width 12-qubit encoding designed for NISQ-compatible molecular classification. Ten qubits encode the molecular graph backbone via Ry rotations (Pauling electronegativity) and Rxx entangling gates (bond order), while two auxiliary qubits compress the remaining atomic tail. The resulting 4,096-dimensional probability vector is passed to an RBF-kernel SVM for classification.
-
-The framework is evaluated on MoleculeNet's BBBP benchmark and six additional datasets using the **ibm_kingston** quantum processor via IBM Quantum, with 10-split stratified cross-validation throughout.
+The paper notebooks on `main` are untouched.
 
 ---
 
-## Repository Structure
+## TL;DR
 
-```
-.
-├── Classical_Benchmark.ipynb
-├── Ablation_Study_ibm_kingston[8192_shots].ipynb
-├── 10_splits_7_datasets_experiment_ibm_kingston.ipynb
-├── 10_splits_Run_1024_shots_[ibm_fez,_kingston,_marrakesh].ipynb
-├── CircuitDepth_vs_Decay_4096_shots.ipynb
-├── Signal_Decay&Convergence_shots[1024,_2048,_4096,_8192].ipynb
-└── README.md
-```
+| Quantity | Result |
+|---|---:|
+| Raw rows in `data/raw/BBBP.csv` | **2050** |
+| Invalid SMILES (RDKit) | **11** |
+| Valid rows after parsing | 2039 |
+| Multi-fragment rows (salts / solvents / mixtures) | **105** |
+| Structures with contradictory labels (excluded) | **11** structures / **22** rows |
+| Duplicate rows collapsed | **62** |
+| **Final modelling table** | **1955** (1494 permeable / 461 non-permeable) |
+| Elements present | B, Br, C, Cl, F, I, N, O, P, S |
+| Elements missing from the original table | **Br, I, P** (added explicitly) |
+| Previous 250-molecule benchmark reproduced | **250 / 250**, 0 label mismatches |
+| Molecules with more than ten heavy atoms | **1851 / 1955** |
+| Charged structures kept (not neutralised) | **34** |
+| Stereoisomer rows with opposite labels | **6** |
+| Rows in tautomer groups with opposite labels | **8** (6 are the stereo pairs, 2 are true tautomers) |
 
----
-
-## Notebooks
-
-### 1. `Classical_Benchmark.ipynb`
-**Corresponds to:** Table II — *Classical Baseline Comparison*
-
-Establishes the classical performance ceiling on 250 balanced BBBP molecules (125 permeable, 125 non-permeable). Uses 256-bit radius-2 Morgan Fingerprints (ECFP4) as features. Evaluates five classifiers across 10-split stratified shuffle-split cross-validation.
-
-| Model | Accuracy | AUC-ROC |
-|---|---|---|
-| Random Forest | 0.742 ± 0.052 | 0.801 ± 0.056 |
-| SVM (RBF Kernel) | 0.710 ± 0.043 | 0.797 ± 0.048 |
-| Gradient Boosting | 0.692 ± 0.063 | 0.748 ± 0.067 |
-| Logistic Regression | 0.692 ± 0.053 | 0.760 ± 0.033 |
-| SVM (Linear) | 0.682 ± 0.045 | 0.740 ± 0.037 |
-
-Random Forest is adopted as the primary classical baseline throughout the paper.
+The number that changed relative to the earlier `dct_rdkit` deliverable is the
+input count: `data/bbbp_mol/bbbp.csv` on that branch had **already dropped the
+11 invalid rows** (2039 rows). Starting from the untouched 2050-row file makes
+the failure count visible, which is what the methods section should report.
 
 ---
 
-### 2. `Ablation_Study_ibm_kingston[8192_shots].ipynb`:Table I — *Hardware Ablation Configuration vs. Accuracy* and Section IV-B — *Primary Classification Performance*
+## Quick start
 
-Both notebooks are identical runs of the same ablation experiment (the Copy is a verified duplicate confirming reproducibility). Each cell tests one of six Ncore+Mtail qubit configurations on ibm_kingston at 8,192 shots across 10 splits on the BBBP dataset.
-
-| Configuration | Total Qubits | Hardware Accuracy |
-|---|---|---|
-| 8+2 | 10 | 0.76 ± 0.07 |
-| 8+4 | 12 | 0.71 ± 0.07 |
-| **10+2** | **12** | **0.75 ± 0.07** |
-| 10+4 | 14 | 0.71 ± 0.05 |
-| 12+2 | 14 | 0.74 ± 0.08 |
-| 12+4 | 16 | 0.67 ± 0.05 |
-
-The **10+2 configuration** is selected as the primary architecture for its optimal balance of structural fidelity and coherence budget.
-
----
-
-### 3. `10_splits_7_datasets_experiment_ibm_kingston.ipynb`
-**Corresponds to:** Figure 2 — *Cross-Dataset Accuracy Benchmark* and Section IV-C
-
-Benchmarks the 10+2 quantum feature map against Classical RF and the noiseless simulator across **seven MoleculeNet datasets** (BBBP, Tox21, BACE, HIV, ESOL, Lipophilicity, FreeSolv) using 1,024 shots on ibm_kingston. Each dataset uses the same balanced 250-molecule protocol.
-
-Key results (Quantum Hardware vs. Classical RF accuracy):
-
-| Dataset | Hardware | Classical RF |
-|---|---|---|
-| BBBP | 0.73 ± 0.09 | 0.71 ± 0.05 |
-| Tox21 | 0.58 ± 0.10 | 0.64 ± 0.06 |
-| BACE | 0.62 ± 0.08 | 0.80 ± 0.07 |
-| HIV | 0.52 ± 0.06 | 0.58 ± 0.06 |
-| ESOL | 0.67 ± 0.05 | 0.76 ± 0.05 |
-| Lipophilicity | 0.56 ± 0.08 | 0.58 ± 0.06 |
-| FreeSolv | 0.61 ± 0.07 | 0.80 ± 0.04 |
-
----
-
-### 4. `CircuitDepth_vs_Decay_4096_shots.ipynb`
-**Corresponds to:** Figure 3 — *Circuit Depth vs. Peak Basis State Probability* and Section IV-E
-
-Measures signal fidelity (peak basis state probability) for 10 diverse molecules across three transpiled circuit depth configurations — Shallow (~5 layers), Normal/10+2 (~105 layers), and Deep (~220 layers) — using 4,096 shots on ibm_kingston in a single batch job.
-
-Key findings:
-- At ~105 layers, all molecules remain measurably above the theoretical noise floor (1/2¹² ≈ 0.0002), ranging from **0.009** (Caffeine) to **0.298** (Benzene)
-- At ~220 layers, most molecules collapse to near-noise-floor, with Urea (**0.139**) and Glycerol (**0.044**) as notable exceptions
-
----
-
-### 5. `Signal_Decay&Convergence_shots[1024,_2048,_4096,_8192].ipynb`
-**Corresponds to:** Table III — *Measurement Convergence: Max State Probability vs. Shot Budget* and Section IV-F
-
-Sweeps shot budgets from 1,024 to 8,192 on the same 10 molecules using the 10+2 circuit on ibm_kingston (single batch of 40 PUBs), producing the convergence matrix showing that signal fidelity stabilizes at 1,024 shots.
-
-| Molecule | 1024 | 2048 | 4096 | 8192 |
-|---|---|---|---|---|
-| Benzene | 0.3408 | 0.3257 | 0.3313 | 0.3296 |
-| Urea | 0.2002 | 0.1919 | 0.1882 | 0.1958 |
-| Glycerol | 0.1104 | 0.1201 | 0.1101 | 0.1185 |
-| Caffeine | 0.0098 | 0.0112 | 0.0071 | 0.0066 |
-
----
-
-## Experiment Map
- 
-```mermaid
-flowchart TD
-    DS(["`**MoleculeNet BBBP**
-    250 balanced molecules · ECFP4 fingerprints`"])
- 
-    DS --> NB1
-    DS --> NB2
-    DS --> NB3
- 
-    NB1["`**Classical baseline**
-    *Classical_Benchmark.ipynb*
-    5 models · 10-split CV`"]
- 
-    NB2["`**Ablation study**
-    *Ablation_Study_ibm_kingston.ipynb*
-    6 configs · 8192 shots`"]
- 
-    NB3["`**Cross-dataset benchmark**
-    *10_splits_8_datasets_ibm_kingston.ipynb*
-    7 datasets · 1024 shots`"]
- 
-    DS --> NB4
-    DS --> NB5
- 
-    NB4["`**Signal decay**
-    *CircuitDepth_vs_Decay_4096_shots.ipynb*
-    10 molecules · 3 depths · 4096 shots`"]
- 
-    NB5["`**Shot convergence**
-    *Signal_Decay_Convergence_shots.ipynb*
-    1024 → 8192 shots · 40 PUBs`"]
- 
-    NB1 --> O1([Table II · RF = 0.742])
-    NB2 --> O2([Table I · 10+2 selected · Fig 1])
-    NB3 --> O3([Fig 2 · BBBP hw 0.73 ± 0.09])
-    NB4 --> O4([Fig 3 · noise floor at ~220 layers])
-    NB5 --> O5([Table III · stable at 1024 shots])
- 
-    O1 & O2 & O3 & O4 & O5 --> PAPER
- 
-    PAPER(["`**paper**
-  `"])
- 
-    style NB1 fill:#9FE1CB,stroke:#0F6E56,color:#085041
-    style NB2 fill:#CECBF6,stroke:#534AB7,color:#3C3489
-    style NB3 fill:#B5D4F4,stroke:#185FA5,color:#0C447C
-    style NB4 fill:#F5C4B3,stroke:#993C1D,color:#712B13
-    style NB5 fill:#FAC775,stroke:#854F0B,color:#633806
-```
- 
----
- 
-
-## Hardware & Software
-
-**Quantum Hardware:** IBM Quantum ibm_kingston (Heron r2 processor)
-Additional backends used for primary classification comparison: ibm_fez, ibm_marrakesh
-
-**Key Dependencies:**
-```
-qiskit >= 2.3.1
-qiskit-ibm-runtime >= 0.45.1
-qiskit-aer >= 0.17.2
-qiskit-algorithms == 0.4.0
-rdkit
-scikit-learn
-pandas
-numpy
-matplotlib
-seaborn
-```
-
-Install all dependencies:
 ```bash
-pip install qiskit qiskit-ibm-runtime qiskit-algorithms qiskit-aer pylatexenc
-pip install pandas scikit-learn matplotlib seaborn rdkit
+python -m pip install -r requirements.txt
+
+# Rebuild every deliverable from the raw table
+python -m analysis_features clean
+
+# Inspect one molecule: which atom sits on each qubit?
+python -m analysis_features embed --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
+
+# Compact summary of the cleaned table
+python -m analysis_features summary
+
+# Tests
+python -m pytest
 ```
 
-**IBM Quantum Access:** Notebooks require a valid IBM Quantum account. Results from hardware jobs are already stored in notebook outputs and can be inspected without re-running. To re-run hardware jobs, set your credentials via `QiskitRuntimeService.save_account(...)`.
+Everything is deterministic. The RDKit version used for the committed outputs
+is stored in `data/processed/BBBP_clean_settings.json` (2024.03.5 at the time of
+writing).
 
 ---
 
-## Reproducibility Notes
+## What is in the branch
 
-- All hardware experiments were run as independent job submissions on ibm_kingston. Run-to-run variance is expected on NISQ hardware and is reflected in the confidence intervals reported throughout the paper.
-- The two ablation notebooks (`Ablation_Study` and `Copy_of_Ablation_Study`) are duplicate runs of the same experiment, confirming reproducibility across independent executions.
-- The `Classical_Benchmark.ipynb` is fully reproducible locally without any quantum hardware access.
-- All datasets are sourced from MoleculeNet via the DeepChem S3 bucket and balanced to exactly 250 molecules (125 per class) via random undersampling with `random_state=42`.
+```text
+analysis_features/
+  config.py        # circuit constants and default paths
+  elements.py      # original Hannan table, explicit extensions, coverage audit
+  standardize.py   # parse, salt stripping, canonical SMILES, tautomer key
+  cleaning.py      # the eight-stage pipeline (pure functions, counted stages)
+  io.py            # read raw tables, write the six deliverable files
+  embedding.py     # exact 10+2 state vector + Pauli readout, no Qiskit
+  cli.py           # clean / embed / summary
+tests/             # 35 unit and integration tests
+data/
+  raw/BBBP.csv                  # untouched DeepChem download (2050 rows)
+  raw/BBBP_previous_250.csv     # previous balanced benchmark (125 + 125)
+  processed/
+    BBBP_clean_full.csv         # modelling table (1955 x 10)
+    BBBP_clean_audit.csv        # every parsed row + exclusion reason (2039)
+    BBBP_invalid_smiles.csv     # the 11 rejected source strings
+    BBBP_fragment_audit.csv     # every disconnected component
+    BBBP_clean_log.txt          # per-stage counts
+    BBBP_clean_settings.json    # versions + decisions in machine-readable form
+docs/METHODS.md                 # copy-paste methods paragraph
+```
 
 ---
 
-## Citation
+## The cleaning pipeline, stage by stage
 
-If you use this code or results in your work, please cite.
+The pipeline is `analysis_features.cleaning.clean_dataset`. Each stage reports
+its own count to `BBBP_clean_log.txt`.
 
+| Stage | Rule | BBBP result |
+|---|---|---:|
+| 1. Parse | `Chem.MolFromSmiles`; reject if RDKit returns `None` | 11 rejected |
+| 2. Strip salts | Keep the largest **carbon-containing** fragment; ties by heavy atoms, then heteroatoms, then canonical SMILES | 105 rows |
+| 3. Canonicalise | `MolToSmiles(canonical=True, isomericSmiles=True)` | 2039 |
+| 4. Elements | Collect every element; compare with the original table and with the explicit extension; raise on any unknown | Br, I, P added |
+| 5a. Label conflicts | Group by canonical structure; exclude every structure carrying both labels | 11 structures / 22 rows |
+| 5b. Duplicates | Collapse identical canonical structures, keeping the first occurrence | 62 removed |
+| 6. Stereo flag | Group by stereo-free canonical structure; flag groups with opposite labels | 6 rows |
+| 7. Tautomer flag | Group by RDKit tautomer canonical form; flag groups with opposite labels | 8 rows |
+| 8. Previous benchmark | Canonicalise the previous 250 SMILES with the same parent rule; flag membership | 250 / 250 |
 
+### Why the order matters: propranolol
+
+The first raw entry is
+
+```text
+[Cl].CC(C)NCC(O)COc1cccc2ccccc12    label 1
+```
+
+and the free base also appears later:
+
+```text
+CC(C)NCC(O)COc1cccc2ccccc12          label 0
+```
+
+If salts are stripped **before** deduplication, both rows collapse to
+`CC(C)NCC(O)COc1cccc2ccccc12` and the contradiction becomes visible. The
+structure is then excluded. This is the concrete answer to the qubit-0 worry:
+
+- without stripping, the published baseline (`order="source"`) puts **Cl on
+  qubit 0**;
+- with canonical re-numbering alone, Cl moves but remains in the molecule and
+  distorts the tail;
+- with stripping, qubit 0 is a carbon of the parent.
+
+```bash
+python -m analysis_features embed \
+  --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12" \
+  --order source --keep-salts
+# q0 = Cl
+
+python -m analysis_features embed \
+  --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
+# q0 = C, parent = CC(C)NCC(O)COc1cccc2ccccc12
+```
 
 ---
 
-## Acknowledgements
+## Decisions, and why
 
-The authors thank the QAMP 2025 organizers and IBM Quantum for providing access to quantum hardware.
+### Salts and solvents — removed
+
+We keep the largest **carbon-containing** fragment. Carbon comes first so a
+counter-ion is never chosen as the parent. Ties are broken by heavy-atom count,
+then heteroatom count, then the canonical string. The lexical tie-break is not
+chemistry, so every tie is flagged:
+
+- `num 105`: caffeine · caffeine · ethylenediamine (a 1:2:1 adduct);
+- `num 1839`: steroid · steroid · water.
+
+Both keep the largest organic fragment. They are mixtures rather than simple
+salts and are flagged in `BBBP_fragment_audit.csv` (`manual_review = True`) and
+in the audit table (`ambiguous_fragments = True`).
+
+### Charges — kept, never neutralised
+
+A protonated amine and its free base are different species at physiological pH.
+Neutralising would change the property being predicted, so `formal_charge` is
+recorded and the structure is left as deposited. 34 structures in the final
+table carry a non-zero formal charge.
+
+### Tautomers — not merged
+
+RDKit's tautomer enumerator is a heuristic and can move protons in ways that
+change the permeating species. We use it **only** to group structures for
+conflict detection. No tautomer is rewritten or merged.
+
+The two genuine tautomer conflicts are the xanthine forms:
+
+```text
+Cn1c(=O)c2[nH]cnc2n(C)c1=O    label 0
+Cn1c(=O)c2nc[nH]c2n(C)c1=O    label 1
+```
+
+They remain in the table with `tautomer_label_conflict = True`. The other six
+flagged rows are the stereo pairs below: same constitution, different labels.
+
+### Stereochemistry — preserved in the file, invisible to the circuit
+
+RDKit keeps the `@/@@` tags: 629 of the 1955 cleaned molecules carry stereo.
+They are **not** removed or averaged. But the feature map only reads Pauling
+electronegativity per atom and bond order per edge; both are invariant under a
+chiral inversion. A dedicated audit on this same 1955-molecule table found:
+
+| Measurement | Count |
+|---|---:|
+| Stereoisomer forms in skeletons with more than one form | 43 |
+| Forms with identical features under SMILES order + Pauling | **42 / 43** |
+| Forms with identical features under chemical coverage + TPSA | **41 / 43** |
+| Forms in skeletons carrying opposite labels | **6** |
+
+For those six rows, two molecules produce the same 78-number vector but have
+different `p_np`. No classifier on top of the map can separate them; this is
+irreducible representation noise, not a model failure. They are flagged as
+`stereo_label_conflict` so the main experiment can exclude them or report them
+as a limitation.
+
+### Invalid SMILES — rejected, not repaired
+
+The 11 failures are listed in `BBBP_invalid_smiles.csv` with their original
+`num`, name, SMILES and label. Most share a systematic guanidine motif
+(`[NH]=C(\N)N`, `[NH2]` with four bonds) that RDKit rejects on valence grounds.
+They could be repaired by hand, but a silent repair would be a chemical edit
+masquerading as parsing. They are therefore excluded and counted.
+
+### "Standardize" — what we do and do not do
+
+We parse with RDKit (sanitisation on), strip disconnected fragments and write
+canonical isomeric SMILES. We do **not** call `rdMolStandardize.Cleanup` by
+default, because it rewrites charge-separated groups (for example sulfoxide
+`S=O` → `[S+][O-]`) and would change 15 structures in this dataset. The flag is
+available as `--cleanup` for a sensitivity check, but it is off by default.
+
+---
+
+## Column dictionary
+
+### `BBBP_clean_full.csv` — modelling table
+
+| Column | Meaning |
+|---|---|
+| `mol_id` | `bbbp_` + first 12 hex of SHA-1(canonical SMILES). Structure-derived, carries no source-order information. |
+| `canonical_smiles` | Canonical isomeric SMILES of the parent. |
+| `label` | BBBP `p_np` (1 permeable, 0 non-permeable). |
+| `heavy_atom_count` | Non-hydrogen atoms in the parent. |
+| `bond_count` | Bonds between two heavy atoms. |
+| `atoms_beyond_10` | `max(0, heavy_atom_count - 10)`; atoms compressed into the tail. |
+| `formal_charge` | Net formal charge of the parent. |
+| `in_previous_250` | Structure belongs to the previous balanced benchmark. |
+| `stereo_label_conflict` | Skeleton has stereoisomers with opposite labels. |
+| `tautomer_label_conflict` | Tautomer group has opposite labels. |
+
+Rows are sorted by `mol_id`, not by source order, so row position cannot encode
+curation provenance.
+
+### `BBBP_clean_audit.csv` — provenance table
+
+Same columns plus `source_num`, `source_name`, `source_smiles`,
+`salt_stripped`, `ambiguous_fragments` and `excluded_reason`
+(`included`, `label_conflict`, `duplicate`). It keeps all 2039 parsed rows,
+including excluded ones, so every removal is inspectable.
+
+> **Do not use `source_num` or `source_smiles` as model features.** The source
+> file is grouped by provenance and the row index alone reaches AUC 0.940 under
+> scaffold cross-validation. The audit table exists for tracing, not modelling.
+
+---
+
+## The 10+2 embedding, precisely
+
+### What the circuit sees
+
+The circuit does not see a drawing, a conformer or a SMILES string. It sees
+three kinds of local numbers computed by RDKit:
+
+1. **One angle per selected atom.** The published encoding uses Pauling
+   electronegativity `χ`:
+
+   ```text
+   θ_i = α · χ_i²,        α = 0.1
+   ```
+
+   `Ry(θ_i)` is applied to qubit `i` for the first ten selected heavy atoms.
+2. **One angle per bond.** `Rxx(φ_ij)` with
+
+   ```text
+   φ_ij = bond_order_ij / 2
+   ```
+
+   applied between the qubits of the two bonded atoms.
+3. **Two tail angles.** Every heavy atom after the tenth is compressed into
+   qubits 10 and 11. In the published rule the tail is split alternately and
+   each half contributes an electronegativity sum:
+
+   ```text
+   θ_10 = (α/2) · Σ χ_i   (tail positions 0, 2, 4, ...)
+   θ_11 = (α/2) · Σ χ_i   (tail positions 1, 3, 5, ...)
+   ```
+
+   Interface bonds (one atom in the backbone, one in the tail) are coupled to
+   **both** q10 and q11 in the published circuit.
+
+The state is built from `|0⟩^⊗12`:
+
+```text
+|ψ⟩ = (∏_{bonds} Rxx(φ)) · (∏_{atoms} Ry(θ)) |0⟩^⊗12
+```
+
+and measured in the computational basis:
+
+```text
+p(s) = |⟨s|ψ⟩|²,    s ∈ {0,1}^12
+```
+
+There are 4096 probabilities. The paper feeds all 4096 to an RBF-kernel SVM.
+This branch defaults to the compact **78 Pauli moments** (`12` single-qubit
+`⟨Z_i⟩` plus `66` pair `⟨Z_i Z_j⟩`), which are estimable from the same
+computational-basis shots and are easier to inspect.
+
+### Propranolol after salt stripping
+
+`CC(C)NCC(O)COc1cccc2ccccc12` has 13 heavy atoms: 10 on the backbone, 3 in the
+tail. The printed table from `python -m analysis_features embed ...` is:
+
+| Qubit | Atom index | Element | Angle (rad) |
+|---:|---:|---|---:|
+| q0 | 0 | C | 0.65025 |
+| q1 | 1 | C | 0.65025 |
+| q2 | 2 | C | 0.65025 |
+| q3 | 3 | N | 0.92416 |
+| q4 | 4 | C | 0.65025 |
+| q5 | 5 | C | 0.65025 |
+| q6 | 6 | O | 1.18336 |
+| q7 | 7 | C | 0.65025 |
+| q8 | 8 | O | 1.18336 |
+| q9 | 9 | C | 0.65025 |
+| q10 | tail A | — | 0.63750 |
+| q11 | tail B | — | 0.51000 |
+
+The chlorine is gone. Qubit 0 is a methyl carbon of the parent, with
+`θ = 0.1 × 2.55² = 0.65025`.
+
+### Does the circuit classify?
+
+No. The circuit is a **feature map**. The classifier is always classical:
+
+```text
+SMILES → RDKit numbers → 12-qubit rotations → 4096 amplitudes
+       → 4096 probabilities or 78 moments → classical SVM → label
+```
+
+The same `StandardScaler + SVC(RBF)` can consume RDKit descriptors or circuit
+moments; it does not know which is which. Any claim of a "quantum classifier"
+in this project would be inaccurate.
+
+### Did we use TPSA?
+
+**Not in the published encoding.** The paper's atom angle is `0.1 · χ²`
+(Pauling), and that is the default here. TPSA appears in the `dct_rdkit`
+ablation branch in two different roles, which are easy to conflate:
+
+| Variant | Atom angle | Atom selection | Readout |
+|---|---|---|---|
+| **Paper / this branch default** | `0.1 · χ²` | first ten atoms of the string | 4096 `p(s)` |
+| `dct_rdkit` main arm | `0.1 · χ²` | `CHEMICAL_COVERAGE` (graph-derived) | 78 `Z/ZZ` |
+| "chem coverage + TPSA" | `π · clip(TPSA_i / 35 Å², 0, 1)` | `CHEMICAL_COVERAGE` | 78 `Z/ZZ` |
+| Other ablations | Gasteiger charge, Crippen logP, composite BBB, angle mixtures, multi-physchem | several | `X/Y/Z`, fidelity kernel, re-uploading |
+
+So: **the paper uses Pauling electronegativity; TPSA was an optional atom
+property and a selector feature in later ablations, not part of the original
+circuit.** `embed(..., property="tpsa")` is provided to reproduce that variant,
+but it is not the default.
+
+### Reproducing the paper exactly
+
+Two switches matter:
+
+```bash
+# published tail rule + source atom order
+python -m analysis_features embed --smiles "..." --order source --tail paper
+
+# improved summary tail
+python -m analysis_features embed --smiles "..." --order canonical --tail global
+```
+
+`--order source` keeps the atom order of the string as written, which is what
+the original notebook did (`atoms[:10]`). `--order canonical` re-parses RDKit's
+canonical SMILES first and is reproducible across input spellings. `--tail
+paper` uses the alternating electronegativity sums above; `--tail global` uses
+the chemical/structural summaries from the newer ablations.
+
+---
+
+## Advice on atom ordering
+
+Canonical SMILES makes atom numbering **reproducible**, not **chemically
+meaningful**. Atom 0 is still whatever RDKit's canonical ranking puts first.
+The published baseline is worse: it uses the order of the source string, which
+encodes who deposited the record.
+
+Measured on the same 1955 molecules with scaffold-disjoint outer folds
+(`dct_rdkit`, `analysis/full_dataset/`):
+
+| Representation | AUC (fixed C) | AUC (nested C) |
+|---|---:|---:|
+| `source_row` (audit only) | 0.940 | 0.951 |
+| SMILES order, source string | 0.889 | 0.895 |
+| Canonical traversal | 0.810 | 0.815 |
+| Chemical coverage + Pauling | 0.784 | 0.795 |
+
+The source-order arm is not reading chemistry; it is reading curation order.
+The drop from 0.889 to 0.810 when canonicalising is the leak disappearing.
+
+**Recommendation for the paper:** use a graph-derived selector
+(`CHEMICAL_COVERAGE` in `dct_rdkit`) for the main quantum arm, keep canonical
+order as a reproducibility control, and report source order only as the
+historical baseline with the leakage caveat. Do not tune on the source-order
+score.
+
+---
+
+## Advice on stereoisomers
+
+Keeping `@/@@` is chemically correct, but the current encoding cannot use them.
+Options, in order of effort:
+
+1. **Exclude the six flagged rows** from the main benchmark and report them as
+   a known limitation. This is the cleanest choice for the paper.
+2. **Add a chiral channel** to the feature map. A minimal version assigns a
+   local rotation of `+δ` or `−δ` to a stereocentre depending on tetrahedral
+   parity, so enantiomers no longer produce identical states. This is new
+   work, but it is the only way to make a structure-based claim about
+   enantioselective permeation.
+3. **Report stereo-blindness explicitly** and avoid claiming that the circuit
+   captures 3D structure. It does not: there is no conformer, no distance, no
+   chirality.
+
+The audit that produced the 42/43 and 41/43 numbers is on `dct_rdkit`
+(`experiments/audit_stereo_collisions.py`, `analysis/stereo_collision/`). The
+flag in this branch is the same grouping rule.
+
+---
+
+## Chemically questionable entries
+
+- **11 invalid source SMILES.** Systematic valence errors around guanidine and
+  `[NH2]`; excluded and listed. Most are recoverable by hand, but not by a
+  rule that would be safe to apply silently.
+- **2 ambiguous parent selections.** The caffeine/ethylenediamine adduct and
+  the steroid/water mixture. The largest organic fragment is kept, but these
+  are mixtures, not salts. Flagged.
+- **11 label conflicts.** Propranolol, aspirin, L-DOPA and eight others. The
+  duplicate free base / salt pair is the common pattern; the label is curation
+  noise, and there is no external evidence in the file to choose one.
+- **One genuine tautomer conflict.** The two xanthine forms, labels 0 and 1.
+  Kept and flagged.
+- **34 charged structures.** Kept deliberately. If a downstream model assumes
+  neutral molecules, that assumption is wrong for BBBP.
+- **1851 / 1955 molecules have more than ten heavy atoms** (median 23, maximum
+  132). The tail compression is therefore the normal case, not an edge case.
+  Tail–tail bonds are not emitted as individual gates; this is an architectural
+  bottleneck to state in the methods.
+
+---
+
+## Reproducing the previous 250
+
+`data/raw/BBBP_previous_250.csv` is the old balanced benchmark (125 permeable,
+125 non-permeable). After applying the same salt-stripping and canonicalisation
+rule:
+
+- **250 / 250** structures are present in the cleaned table;
+- **0** label mismatches;
+- `in_previous_250 = True` marks them, so the old results can be recomputed on
+  exactly the same rows.
+
+The previous 250 are a subset of the 1955, not a separate dataset. `--order
+source` with their original strings reproduces the old atom order; `--order
+canonical` gives the reproducible version.
+
+---
+
+## Tests and reproducibility
+
+```bash
+python -m pytest
+# 35 passed
+```
+
+The suite covers salt stripping, canonical invariance, charge and stereo
+preservation, ambiguous fragments, tautomer grouping, the missing elements,
+the embedding (normalisation, 78 moments, qubit-0 chloride regression,
+enantiomer collision, tail modes) and the CLI end to end. `test_cleaning.py`
+also checks the committed outputs (1955 rows, 250 previous, 34 charged, 1851
+tail, no `source_num` in the modelling table).
+
+To regenerate:
+
+```bash
+python -m analysis_features clean
+```
+
+The output is deterministic given the raw file and the recorded RDKit version.
+
+---
+
+## Limitations to state in the paper
+
+1. The circuit is stereo-blind; six rows are provably unlearnable from the
+   current features.
+2. The tail compresses all atoms after the tenth into two scalars; 1851
+   molecules are affected.
+3. The circuit uses one scalar per atom and one per bond, which is poorer input
+   than 13 whole-molecule RDKit descriptors. Classical descriptors lead on this
+   dataset; the quantum arm is not expected to beat them.
+4. Any result that uses source atom order or `source_row` is contaminated by
+   curation provenance. The modelling table removes both.
+5. "Quantum" here means a simulated feature map, not a quantum classifier and
+   not hardware advantage.
+
+---
+
+## Data provenance
+
+- Raw table: DeepChem BBBP (`BBBP.csv`), 2050 rows. The file is kept verbatim in
+  `data/raw/BBBP.csv`.
+- Toolkit: RDKit 2024.03.5 (recorded in `BBBP_clean_settings.json`).
+- Previous benchmark: `BBBP_balanced_50_50.csv` from the paper repository,
+  copied to `data/raw/BBBP_previous_250.csv`.
+- Methods text: `docs/METHODS.md`.
+
+## Original paper material
+
+The notebooks from `main` remain at the repository root
+(`10_splits_7_datasets_experiment_ibm_kingston.ipynb`, the hardware runs, the
+ablation study, the depth/decay study and the classical benchmark). This branch
+adds the dataset and embedding inspection; it does not modify them.
