@@ -28,6 +28,7 @@ python -m experiments.run_mol_random_start
 python -m experiments.run_final_comparison
 python -m experiments.clean_bbbp_full
 python -m experiments.run_full_dataset_scaffold
+python -m experiments.audit_stereo_collisions
 python -m experiments.run_pca_bbbp_comparison
 ```
 

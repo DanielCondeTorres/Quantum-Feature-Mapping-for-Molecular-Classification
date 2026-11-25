@@ -107,6 +107,16 @@ All 250 molecules of the previous balanced benchmark survive the cleaning,
 with no label inconsistencies (`in_previous_250 = True`), so the earlier
 results remain reproducible on the cleaned file.
 
+A dedicated audit (`python -m experiments.audit_stereo_collisions`,
+`analysis/stereo_collision/`) confirms that RDKit preserves stereochemistry in
+the canonical isomeric SMILES (629 molecules carry `@/@@`), but the feature map
+is stereo-blind: among 43 stereoisomer forms, 42 collide to the same vector
+under SMILES_ORDER and 41 under chemical coverage + TPSA. The single exception
+is an atom-ordering artifact, not chirality. Six forms sit in skeletons with
+opposite labels, so they are indistinguishable to any classifier on top of the
+map. This is the strongest argument for either adding a chiral feature channel
+or excluding those cases from the main benchmark.
+
 `python -m experiments.run_full_dataset_scaffold` evaluates every feature
 family on the 1955 structures with five Bemis-Murcko scaffold folds
 (`analysis/full_dataset/`). A practical warning came out of it: the
