@@ -173,6 +173,74 @@ When evaluating both protocols directly:
   across three `source_random` seeds is larger than the canonical-vs-chemical
   gap. A single seed is not a result.
 
+## Random source q0 vs per-atom RDKit property selectors
+
+The last experiment changes **how q0 is chosen**, not the circuit. Two ideas are
+compared on the same 1955 molecules, 1016 scaffold groups, five folds and the
+same RBF-SVM on 78 Pauli moments:
+
+1. **`source_random`**: keep the deposited SMILES (including counter-ions), but
+   rotate its heavy-atom traversal to a **random starting atom** instead of
+   always using the first atom as the `main` branch does.
+2. **`property_*`**: ignore the string order completely and rank heavy atoms by
+   a fixed RDKit per-atom value, then put the ten highest on q0–q9. The values
+   are `TPSA` contribution (`_CalcTPSAContribs`, Å²), Pauling electronegativity,
+   heteroatom flag, absolute formal charge, pharmacophore role weight, and a
+   fixed 0.4/0.3/0.3 mixture of TPSA/en/role. None is fitted to BBBP labels.
+
+| Arm | Cómo se elige q0–q9 | AUC | Bal. acc. |
+|---|---|---:|---:|
+| `source` | primer átomo del SMILES depositado, sales incluidas | **0.8805** | 0.796 |
+| `source_random` (3 seeds) | inicio aleatorio en el SMILES depositado | 0.8200 ± 0.017 | 0.732 |
+| `canonical` | primeros 10 átomos del SMILES canónico | **0.8015** | 0.732 |
+| `property_charge` | mayor carga formal absoluta | 0.8000 | 0.725 |
+| `property_role` | mayor peso de rol farmacofórico | 0.7908 | 0.738 |
+| `property_mixed` | mezcla fija TPSA/EN/rol (0.4/0.3/0.3) | 0.7891 | 0.728 |
+| `property_pauling` | mayor electronegatividad de Pauling | 0.7868 | 0.736 |
+| `property_tpsa` | mayor contribución TPSA por átomo (RDKit) | 0.7792 | 0.730 |
+| `property_hetero` | prioridad de heteroátomos | 0.7714 | 0.712 |
+| `chemical` | cobertura de entornos Morgan y roles | 0.7664 | 0.689 |
+
+`source_random` es la media de tres semillas (0.8281, 0.8002, 0.8316); la
+semilla 1, que aparece en las figuras, da 0.8002, idéntica al canónico.
+
+`pca_property_selectors.png` contiene seis paneles de PCA (2x3) y
+`confusion_matrix_property_selectors.png` las seis matrices de confusión
+correspondientes, para `source`, `source_random` (semilla 1), `canonical`,
+`property_tpsa`, `property_role` y `property_mixed`. El PCA se ajusta sobre los
+78 momentos estandarizados (StandardScaler) y los puntos se colorean por `p_np`.
+
+### Interpretación
+
+- **Ningún selector por propiedad supera al canónico** (0.8015). El mejor es
+  `property_charge` (0.8000), que en BBBP es casi indistinguible del canónico
+  porque casi todos los átomos tienen carga 0 y el desempate por índice devuelve
+  otra vez los primeros diez. No es una ganancia química.
+- **Priorizar polaridad es peor**: TPSA 0.7792, heteroátomos 0.7714 y cobertura
+  Morgan 0.7664 quedan por debajo. Como ya mostró el diagnóstico de gates, estos
+  selectores eligen átomos polares dispersos, reducen los enlaces
+  backbone–backbone (7.76 frente a 9.14 del canónico) y absorben la señal en
+  gates de interfaz duplicados en q10/q11.
+- **`source_random` sí es numéricamente mejor** (0.820 de media) que todos los
+  selectores químicos, pero no es una prueba de que el inicio aleatorio ayude:
+  al destruir la secuencia (`source_permuted`) cae a 0.7587, y al quitar sales
+  no baja (0.8245). Lo que queda es la secuencia de procedencia del archivo, no
+  la química.
+- **El PCA no muestra separación lineal clara.** PC1+PC2 explica entre 39.2% y
+  50.8% de la varianza según el brazo; las nubes de permeables y no permeables
+  se solapan en todos los paneles. `property_role` y `property_mixed` explican
+  algo más de varianza (50.7%/50.8%) pero no mejor AUC (0.791/0.789). La
+  separación la hace la SVM RBF, no las dos primeras componentes.
+- **El desequilibrio de clases importa.** `property_role` tiene mayor balanced
+  accuracy (0.738) que `canonical` (0.732) pese a menor AUC (0.791 vs 0.802);
+  en todos los paneles la matriz tiene muchos más falsos positivos que
+  falsos negativos porque el 76% de las moléculas son permeables.
+
+**Conclusión para el equipo:** elegir q0 por propiedades químicas de RDKit no
+mejora el mapa 10+2; la ventaja aparente del `source` con inicio aleatorio es
+fuga de procedencia, y el mejor modelo real sigue siendo el clásico de Morgan
+(AUC 0.882).
+
 ## Files
 
 | File | Content |
@@ -187,9 +255,14 @@ When evaluating both protocols directly:
 | `salt_diagnostics.csv` | Counter-ion inclusion and label rates for the random-start arm |
 | `salt_probe.csv`, `salt_probe.json` | Salt-kept vs salt-stripped random-start arms |
 | `permutation_probe.csv`, `permutation_probe.json` | Random-subset controls and their diagnostics |
+| `property_selector_benchmark.csv`, `.json` | AUC and PCA variance for random-source q0 vs per-atom property selectors |
+| `pca_property_selectors.png` | PCA (2x3) of the 78 moments coloured by label for six selectors |
+| `confusion_matrix_property_selectors.png` | Out-of-fold confusion matrices (2x3) for the same six selectors |
 
 Reproduce with:
 
 ```bash
 python -m analysis_features benchmark
+python -m analysis_features compare
+python -m analysis_features property-probe
 ```

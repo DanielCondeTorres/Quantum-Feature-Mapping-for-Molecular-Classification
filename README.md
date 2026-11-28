@@ -55,8 +55,14 @@ python -m analysis_features summary
 # Check every requirement against the committed outputs
 python -m analysis_features verify
 
-# Reproduce the atom-order benchmark and the confusion matrix
+# Reproduce the atom-order benchmark and the confusion matrices
 python -m analysis_features benchmark
+
+# Main-vs-cleaned comparison on the 250 subset and the full dataset
+python -m analysis_features compare
+
+# Random-source q0 vs per-atom RDKit property selectors + PCA
+python -m analysis_features property-probe
 
 # Tests
 python -m pytest
@@ -79,10 +85,12 @@ analysis_features/
   atom_order.py    # canonical / source / chemical / random backbone selectors
   embedding.py     # exact 10+2 state vector + Pauli readout, no Qiskit
   benchmark.py     # atom-order comparison on scaffold folds + confusion matrix
+  compare.py       # main (250 subset, source) vs cleaned full dataset
+  property_probe.py # random q0 vs per-atom RDKit property selectors + PCA
   verify.py        # independent check of every cleaning requirement
   io.py            # read raw tables, write the six deliverable files
-  cli.py           # clean / embed / summary / benchmark / verify
-tests/             # 42 unit, integration and verification tests
+  cli.py           # clean / embed / summary / benchmark / compare / property-probe / verify
+tests/             # 47 unit, integration and verification tests
 data/
   raw/BBBP.csv                  # untouched DeepChem download (2050 rows)
   raw/BBBP_previous_250.csv     # previous balanced benchmark (125 + 125)
@@ -100,6 +108,13 @@ results/
   confusion_matrix.png          # out-of-fold matrices (source / canonical / chemical)
   composition_controls.csv      # bag-of-elements controls
   backbone_diagnostics.csv      # gates and connectivity per molecule
+  salt_probe.csv / .json        # random q0 with and without salts
+  permutation_probe.csv / .json # traversal destroyed controls
+  confusion_matrices_main_vs_cleaned.png
+  main_vs_cleaned_benchmark.csv
+  property_selector_benchmark.csv / .json
+  pca_property_selectors.png
+  confusion_matrix_property_selectors.png
 ```
 
 ---
@@ -460,6 +475,44 @@ quantum arm (or canonical order as a reproducible control), report
 `canonical_shuffled` to show that the result is not a lucky numbering, report
 source order only as the historical baseline with the leakage caveat, and
 include the composition controls. Do not tune on the source-order score.
+
+### Random q0 vs per-atom RDKit property selectors
+
+A separate probe asks whether a chemically chosen q0 beats a random one. The
+`property_*` arms rank heavy atoms by a fixed RDKit per-atom value — TPSA
+contribution (`_CalcTPSAContribs`, Å²), Pauling electronegativity, heteroatom
+flag, absolute formal charge, pharmacophore role, and a 0.4/0.3/0.3 mixture —
+and put the ten highest on q0–q9. They ignore the deposited string entirely and
+use no label information. The comparison is on the same 1955 molecules, folds
+and SVM as above.
+
+| Selector | Cómo elige q0–q9 | AUC |
+|---|---|---:|
+| `source` | primer átomo del string depositado (con sales) | 0.8805 (fuga) |
+| `source_random` (3 seeds) | inicio aleatorio en ese string | 0.8200 ± 0.017 |
+| `canonical` | primeros 10 del SMILES canónico | **0.8015** |
+| `property_charge` | mayor carga formal absoluta | 0.8000 |
+| `property_role` | mayor peso de rol farmacofórico | 0.7908 |
+| `property_mixed` | mezcla fija TPSA/EN/rol | 0.7891 |
+| `property_pauling` | mayor electronegatividad | 0.7868 |
+| `property_tpsa` | mayor contribución TPSA atómica (RDKit) | 0.7792 |
+| `property_hetero` | prioridad de heteroátomos | 0.7714 |
+| `chemical` | cobertura de entornos Morgan | 0.7664 |
+
+Ningún selector químico supera al canónico. El que empata (`property_charge`,
+0.8000) lo hace porque casi todos los átomos tienen carga 0 y el desempate
+devuelve los primeros diez. Los que priorizan polaridad (TPSA, heteroátomos)
+quedan por debajo: eligen átomos dispersos y pierden conectividad del backbone.
+`source_random` es numéricamente mejor que todos ellos, pero es fuga: al
+destruir la secuencia (`source_permuted`, 0.7587) cae por debajo del canónico,
+y quitar sales no lo reduce (0.8245). El PCA no separa las clases en ningún
+brazo (PC1+PC2 explica 39–51% de la varianza y las nubes se solapan); la
+separación la hace la SVM RBF.
+
+`results/pca_property_selectors.png` shows the PCA of the 78 moment vectors
+(coloured by `p_np`) and the matching out-of-fold confusion matrices for
+`source`, `source_random` (seed 1), `canonical`, `property_tpsa`,
+`property_role` and `property_mixed`.
 
 ---
 

@@ -135,3 +135,39 @@ def test_canonical_shuffled_keeps_the_canonical_set() -> None:
     shuffled = embed("CC(=O)Oc1ccccc1C(=O)O", order="canonical_shuffled", random_seed=0)
     assert set(canonical.backbone_atoms) == set(shuffled.backbone_atoms)
     assert canonical.backbone_atoms != shuffled.backbone_atoms
+
+
+def test_property_selectors_are_deterministic_and_put_heteroatoms_first() -> None:
+    from analysis_features.atom_order import PROPERTY_SELECTORS
+
+    smiles = "CC(=O)Nc1ccc(O)cc1"
+    for name in PROPERTY_SELECTORS:
+        order = f"property_{name}"
+        first = embed(smiles, order=order)
+        again = embed(smiles, order=order)
+        assert first.features.size == 78
+        assert np.allclose(first.features, again.features)
+
+    assert embed(smiles, order="property_tpsa").qubits[0].element == "O"
+    assert embed(smiles, order="property_role").qubits[0].element == "O"
+    assert embed(smiles, order="property_mixed").qubits[0].element == "O"
+
+
+def test_property_selectors_ignore_input_spelling() -> None:
+    first = embed("CCO", order="property_tpsa").features
+    second = embed("OCC", order="property_tpsa").features
+    assert np.allclose(first, second)
+
+
+def test_property_selector_differs_from_canonical_window() -> None:
+    smiles = "CC(C)NCC(O)COc1cccc2ccccc12"
+    canonical = embed(smiles, order="canonical").features
+    tpsa = embed(smiles, order="property_tpsa").features
+    assert not np.allclose(canonical, tpsa)
+
+
+def test_random_source_order_is_seed_dependent() -> None:
+    smiles = "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
+    first = embed(smiles, order="source_random", strip_salts=False, random_seed=0)
+    other = embed(smiles, order="source_random", strip_salts=False, random_seed=1)
+    assert first.backbone_atoms != other.backbone_atoms

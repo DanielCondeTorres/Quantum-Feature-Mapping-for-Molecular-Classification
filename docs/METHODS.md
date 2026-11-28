@@ -75,6 +75,15 @@ ablations, either as an alternative per-atom angle
 (`π · clip(TPSA_i / 35 Å², 0, 1)`) or as a feature of the atom-selection
 heuristic.
 
+The atom-ordering arms and the per-atom property selectors are evaluated on
+the same 1955 structures with five scaffold-disjoint folds and a fixed
+RBF-kernel SVM on the 78 moments. The property selectors rank heavy atoms by
+fixed RDKit per-atom values (TPSA contribution, Pauling electronegativity,
+heteroatom flag, formal charge, pharmacophore role, and a fixed mixture) and
+place the ten highest on q0-q9; none of these values is fitted to the label.
+Principal-component analysis of the standardised feature vectors is used only
+for visual inspection, never as a classifier.
+
 Two limitations follow directly from the encoding. First, it is stereo-blind:
 629 cleaned molecules carry stereochemistry, but `Ry(χ²)` and `Rxx(b/2)` are
 invariant under chiral inversion. Among 43 stereoisomer forms, 42 collapse to

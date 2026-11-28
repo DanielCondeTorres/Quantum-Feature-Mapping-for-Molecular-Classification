@@ -4,6 +4,8 @@
     python -m analysis_features embed --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
     python -m analysis_features summary
     python -m analysis_features benchmark
+    python -m analysis_features compare
+    python -m analysis_features property-probe
 """
 
 from __future__ import annotations
@@ -98,6 +100,15 @@ def _benchmark(args: argparse.Namespace) -> None:
     print(f"\nSaved: {args.outdir}")
 
 
+def _property_probe(args: argparse.Namespace) -> None:
+    from .property_probe import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+    print(f"\nSaved PCA and confusion matrices to: {args.outdir}")
+
+
 def _compare(args: argparse.Namespace) -> None:
     from .compare import run_comparison
 
@@ -164,6 +175,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("--outdir", type=Path, default=Path("results"))
     compare.set_defaults(func=_compare)
+
+    probe = subparsers.add_parser(
+        "property-probe",
+        help="compare random-source q0 with per-atom RDKit property selectors",
+    )
+    probe.add_argument("--outdir", type=Path, default=Path("results"))
+    probe.set_defaults(func=_property_probe)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

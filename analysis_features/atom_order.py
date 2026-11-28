@@ -24,6 +24,10 @@ the ordering choice explicit and reproducible:
     A random subset of the source parent's heavy atoms (destroys the traversal).
 ``canonical_permuted``
     A random subset of the canonical parent's heavy atoms (destroys the traversal).
+``property_tpsa`` / ``property_pauling`` / ``property_hetero`` /
+``property_charge`` / ``property_role`` / ``property_mixed``
+    Rank heavy atoms by an RDKit per-atom property and take the ten highest.
+    These are structure-based selectors, not string-order selectors.
 
 No strategy looks at the label.
 """
@@ -41,6 +45,7 @@ from rdkit import Chem, RDConfig
 from rdkit.Chem import ChemicalFeatures, rdMolDescriptors
 
 from .config import N_BACKBONE
+from .elements import electronegativity
 
 
 @dataclass(frozen=True)
@@ -311,3 +316,88 @@ def permuted_backbone(
     rng = np.random.default_rng(seed)
     order = [int(idx) for idx in rng.permutation(heavy)]
     return tuple(order[:n_backbone])
+
+
+# --- Per-atom RDKit property selectors -------------------------------------
+PROPERTY_SELECTORS = (
+    "tpsa",
+    "pauling",
+    "hetero",
+    "charge",
+    "role",
+    "mixed",
+)
+
+
+def per_atom_tpsa(mol: Chem.Mol) -> dict[int, float]:
+    """RDKit's per-atom topological polar-surface contribution (A^2).
+
+    ``rdMolDescriptors.CalcTPSA(mol)`` returns the sum; the private helper
+    ``_CalcTPSAContribs`` exposes the same numbers per atom. They are kept as
+    raw RDKit values, not refitted to BBBP.
+    """
+    try:
+        contributions = rdMolDescriptors._CalcTPSAContribs(mol)
+    except (AttributeError, RuntimeError, ValueError):
+        contributions = ()
+    return {
+        idx: float(contributions[idx])
+        for idx in range(mol.GetNumAtoms())
+        if idx < len(contributions)
+    }
+
+
+def per_atom_property_scores(mol: Chem.Mol, property: str) -> dict[int, float]:
+    """Task-agnostic per-atom scores used to rank backbone candidates."""
+    if property not in PROPERTY_SELECTORS:
+        raise ValueError(f"property must be one of {PROPERTY_SELECTORS}")
+    heavy = heavy_indices(mol)
+    roles = atom_role_tokens(mol)
+    tpsa = per_atom_tpsa(mol)
+
+    scores: dict[int, float] = {}
+    for idx in heavy:
+        atom = mol.GetAtomWithIdx(idx)
+        if property == "tpsa":
+            score = tpsa.get(idx, 0.0)
+        elif property == "pauling":
+            score = electronegativity(atom.GetSymbol())
+        elif property == "hetero":
+            score = float(atom.GetAtomicNum() != 6)
+        elif property == "charge":
+            score = abs(float(atom.GetFormalCharge()))
+        elif property == "role":
+            score = sum(
+                _ROLE_WEIGHTS[token.split(":", 1)[1]]
+                for token in roles.get(idx, ())
+                if token.startswith("role:")
+            )
+        else:  # mixed: fixed, interpretable weights, never fitted to labels
+            role_sum = sum(
+                _ROLE_WEIGHTS[token.split(":", 1)[1]]
+                for token in roles.get(idx, ())
+                if token.startswith("role:")
+            )
+            score = (
+                0.40 * min(tpsa.get(idx, 0.0) / 35.0, 1.0)
+                + 0.30 * min(electronegativity(atom.GetSymbol()) / 4.0, 1.0)
+                + 0.30 * min(role_sum / 5.0, 1.0)
+            )
+        scores[idx] = float(score)
+    return scores
+
+
+def property_backbone(
+    mol: Chem.Mol, property: str, n_backbone: int = N_BACKBONE
+) -> tuple[int, ...]:
+    """Top-scoring heavy atoms by an RDKit per-atom property.
+
+    Ties use the atom index, so the rule is deterministic and independent of
+    the input SMILES spelling. The selected atoms are returned in descending
+    score order, which makes q0 the most "chemical" atom of the molecule.
+    """
+    scores = per_atom_property_scores(mol, property)
+    ordered = sorted(
+        heavy_indices(mol), key=lambda idx: (-scores[idx], idx)
+    )
+    return tuple(ordered[:n_backbone])
