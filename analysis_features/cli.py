@@ -10,6 +10,7 @@
     python -m analysis_features pca-diagnosis
     python -m analysis_features random-qubit-test
     python -m analysis_features importance-test
+    python -m analysis_features four-matrices
 """
 
 from __future__ import annotations
@@ -155,6 +156,14 @@ def _importance_test(args: argparse.Namespace) -> None:
     print(table.to_string(index=False))
 
 
+def _four_matrices(args: argparse.Namespace) -> None:
+    from .four_matrices import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
 def _verify(args: argparse.Namespace) -> None:
     from .verify import main as verify_main
 
@@ -246,6 +255,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     importance.add_argument("--outdir", type=Path, default=Path("results"))
     importance.set_defaults(func=_importance_test)
+
+    four_matrices = subparsers.add_parser(
+        "four-matrices", help="one PNG with the four confusion matrices"
+    )
+    four_matrices.add_argument("--outdir", type=Path, default=Path("results"))
+    four_matrices.set_defaults(func=_four_matrices)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
