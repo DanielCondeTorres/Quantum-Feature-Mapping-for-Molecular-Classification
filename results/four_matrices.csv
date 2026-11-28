@@ -1,5 +1,0 @@
-arm,order,accuracy,balanced_accuracy,auc,TN,FP,FN,TP
-paper_smiles_order,source,0.8501,0.776,0.8559,293,168,125,1369
-random_backbone,source_permuted,0.7407,0.5828,0.6399,131,330,177,1317
-importance,importance,0.8061,0.7037,0.7777,235,226,153,1341
-community_importance,community_importance,0.8036,0.7035,0.7679,237,224,160,1334

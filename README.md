@@ -76,6 +76,9 @@ python -m analysis_features random-qubit-test
 # RDKit BBBP importance + graph communities
 python -m analysis_features importance-test
 
+# Final: only the three atom-selection rules, one PNG
+python -m analysis_features three-arms
+
 # Tests
 python -m pytest
 ```
@@ -103,6 +106,7 @@ analysis_features/
   pca_diagnosis.py # why two PCA components collapse the 78 moments
   random_qubit_test.py # paper SMILES order vs 20 random backbones, accuracy test
   importance_test.py # RDKit BBBP importance + graph communities vs paper order
+  three_arms.py # final clean comparison: paper / random / community importance
   verify.py        # independent check of every cleaning requirement
   io.py            # read raw tables, write the six deliverable files
   cli.py           # clean / embed / summary / benchmark / compare / property-probe / verify
@@ -136,6 +140,8 @@ results/
   pca_diagnosis.csv / .json / .png
   random_qubit_test.csv / .json / .png
   importance_test.csv / .json / .png
+  three_arms.csv / .json
+  confusion_matrices_three_arms.png
 ```
 
 ---
@@ -603,6 +609,19 @@ fijos, y por una variante que usa comunidades de networkx sobre el grafo:
 La importancia química sí supera claramente al azar y al baseline trivial,
 pero no alcanza al orden SMILES del paper (que es fuga). Las comunidades no
 mejoran: 0.804 frente a 0.806. Figura: `results/importance_test.png`.
+
+### Entregable final: solo 3 reglas
+
+`python -m analysis_features three-arms` sustituye los experimentos anteriores
+por un único módulo con **tres brazos y una imagen de tres matrices**:
+`paper_smiles_order` (0.850 accuracy, fuga del string), `random_backbone`
+(0.741, peor que el baseline trivial) y `community_importance` (0.804). El
+selector de comunidades usa el score RDKit descrito arriba, reparte los 10
+qubits entre comunidades del grafo y deja el resto de átomos para q10/q11 con
+las sumas alternadas del paper. No puede eliminar la compresión de la cola en
+un circuito fijo de 12 qubits, pero evita que los 10 átomos importantes se
+concentren todos en una sola región. Ver `results/three_arms.csv` y
+`results/confusion_matrices_three_arms.png`.
 
 ---
 

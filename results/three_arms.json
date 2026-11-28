@@ -1,0 +1,45 @@
+{
+  "config": {
+    "n_molecules": 1955,
+    "folds": 5,
+    "fold_seed": 42,
+    "svm": "RBF SVC C=10.0, StandardScaler in-fold",
+    "readout": "78 Pauli moments",
+    "tail_mode": "paper"
+  },
+  "arms": [
+    {
+      "arm": "paper_smiles_order",
+      "selection": "first ten atoms in RDKit SMILES-parse order (the paper's rule)",
+      "auc": 0.8559,
+      "accuracy": 0.8501,
+      "balanced_accuracy": 0.776,
+      "TN": 293,
+      "FP": 168,
+      "FN": 125,
+      "TP": 1369
+    },
+    {
+      "arm": "random_backbone",
+      "selection": "ten random heavy atoms from the same parsed molecule",
+      "auc": 0.6399,
+      "accuracy": 0.7407,
+      "balanced_accuracy": 0.5828,
+      "TN": 131,
+      "FP": 330,
+      "FN": 177,
+      "TP": 1317
+    },
+    {
+      "arm": "community_importance",
+      "selection": "highest RDKit BBBP importance per graph community, then global ranking",
+      "auc": 0.7679,
+      "accuracy": 0.8036,
+      "balanced_accuracy": 0.7035,
+      "TN": 237,
+      "FP": 224,
+      "FN": 160,
+      "TP": 1334
+    }
+  ]
+}

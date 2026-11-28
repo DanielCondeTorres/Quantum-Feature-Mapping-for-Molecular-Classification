@@ -10,7 +10,7 @@
     python -m analysis_features pca-diagnosis
     python -m analysis_features random-qubit-test
     python -m analysis_features importance-test
-    python -m analysis_features four-matrices
+    python -m analysis_features three-arms
 """
 
 from __future__ import annotations
@@ -156,8 +156,8 @@ def _importance_test(args: argparse.Namespace) -> None:
     print(table.to_string(index=False))
 
 
-def _four_matrices(args: argparse.Namespace) -> None:
-    from .four_matrices import run
+def _three_arms(args: argparse.Namespace) -> None:
+    from .three_arms import run
 
     table = run(outdir=args.outdir)
     print()
@@ -256,11 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
     importance.add_argument("--outdir", type=Path, default=Path("results"))
     importance.set_defaults(func=_importance_test)
 
-    four_matrices = subparsers.add_parser(
-        "four-matrices", help="one PNG with the four confusion matrices"
+    three_arms = subparsers.add_parser(
+        "three-arms", help="paper order, random backbone and community importance"
     )
-    four_matrices.add_argument("--outdir", type=Path, default=Path("results"))
-    four_matrices.set_defaults(func=_four_matrices)
+    three_arms.add_argument("--outdir", type=Path, default=Path("results"))
+    three_arms.set_defaults(func=_three_arms)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

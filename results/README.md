@@ -386,6 +386,51 @@ comunidades no aportan: 0.804 frente a 0.806 del ranking directo, probablemente
 porque obligan a representar regiones que no son las más informativas. La
 figura `importance_test.png` compara los cuatro brazos.
 
+## Final clean comparison: only three selection rules
+
+`python -m analysis_features three-arms` is the focused deliverable: **one PNG
+with three confusion matrices** and no other arms. It uses the full cleaned
+1955-row table, the published 10+2 circuit with the alternating tail, five
+scaffold-disjoint folds, and the same RBF SVM on 78 Pauli moments.
+
+| Regla | Cómo elige q0–q9 | Accuracy | Bal. acc. | AUC |
+|---|---|---:|---:|---:|
+| `paper_smiles_order` | Primeros 10 átomos en orden de parseo SMILES de RDKit | 0.8501 | 0.776 | 0.8559 |
+| `random_backbone` | 10 átomos pesados al azar del mismo SMILES | 0.7407 | 0.583 | 0.6399 |
+| `community_importance` | Mejor átomo por comunidad + ranking RDKit | 0.8036 | 0.704 | 0.7679 |
+
+**Qué features usa `community_importance`:** un score fijo por átomo que
+combina la contribución de TPSA (`_CalcTPSAContribs`), logP y refractividad
+molar de Crippen (`_CalcCrippenContribs`), los roles HBD/HBA de RDKit, la carga
+parcial de Gasteiger, la carga formal, la identidad del elemento y la
+aromaticidad. Los descriptores continuos se normalizan por su desviación
+absoluta respecto a la media de la molécula; los pesos son fijos y nunca se
+ajustan a etiquetas. Luego networkx divide el grafo de átomos pesados en
+comunidades por modularidad, coge el átomo de mayor score de cada comunidad y
+rellena los huecos con el ranking global. q0 es el átomo seleccionado con mayor
+score.
+
+**Qué pasa con los otros átomos (la cola):** todos los átomos pesados que no
+entran en q0–q9 van a los dos qubits auxiliares. Como en el paper, se parten en
+dos listas alternas por índice (A = 0,2,4…, B = 1,3,5…) y sus sumas de
+electronegatividad fijan `θ10` y `θ11`. Los enlaces que cruzan
+backbone–cola emiten dos compuertas `Rxx`, una a q10 y otra a q11; los enlaces
+dentro de la cola no emiten `Rxx`. La selección por comunidades **no elimina**
+esta compresión —no se puede en un diseño fijo de 12 qubits—, pero hace que
+los 10 átomos elegidos representen regiones distintas de la molécula, de modo
+que los dos qubits cola resumen un resto más repartido. Esa es la diferencia
+frente al ranking puro: evita que todos los qubits importantes caigan en el
+mismo grupo funcional y dejen el resto de una molécula grande como cola.
+
+**Los otros dos brazos:** `paper_smiles_order` reproduce la regla literal del
+paper (sin selección química; en esta tabla limpia arrastra la fuga de
+procedencia del string depositado) y `random_backbone` es el control de
+“cualquier conjunto de 10 átomos”, que queda incluso por debajo del baseline
+trivial de predecir siempre permeable (0.764).
+
+`confusion_matrices_three_arms.png` muestra las tres matrices; `three_arms.csv`
+y `three_arms.json` tienen métricas y configuración.
+
 ## Files
 
 | File | Content |
@@ -408,6 +453,7 @@ figura `importance_test.png` compara los cuatro brazos.
 | `pca_diagnosis.csv`, `.json`, `.png` | Rotation vs truncation, PC correlations, imbalance and score distributions |
 | `random_qubit_test.csv`, `.json`, `.png` | Paper SMILES order vs 20 random backbones, accuracy distributions |
 | `importance_test.csv`, `.json`, `.png` | RDKit BBBP importance and graph communities vs paper order |
+| `three_arms.csv`, `.json`, `confusion_matrices_three_arms.png` | Final focused comparison: paper, random and community importance |
 
 Reproduce with:
 
@@ -419,4 +465,5 @@ python -m analysis_features four-features
 python -m analysis_features pca-diagnosis
 python -m analysis_features random-qubit-test
 python -m analysis_features importance-test
+python -m analysis_features three-arms
 ```

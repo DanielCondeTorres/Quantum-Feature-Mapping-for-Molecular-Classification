@@ -1,0 +1,4 @@
+arm,selection,auc,accuracy,balanced_accuracy,TN,FP,FN,TP
+paper_smiles_order,first ten atoms in RDKit SMILES-parse order (the paper's rule),0.8559,0.8501,0.776,293,168,125,1369
+random_backbone,ten random heavy atoms from the same parsed molecule,0.6399,0.7407,0.5828,131,330,177,1317
+community_importance,"highest RDKit BBBP importance per graph community, then global ranking",0.7679,0.8036,0.7035,237,224,160,1334
