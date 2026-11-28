@@ -602,6 +602,84 @@ panels.
 Counts, metrics and configuration are in `embedding_comparison.csv` and
 `embedding_comparison.json`.
 
+## How community selection and the tail actually work
+
+A frequent misreading is that a community is converted into one averaged
+"community feature". It is not. The steps are:
+
+1. Compute the per-atom importance `s_i` for **every** heavy atom (the
+   nine-descriptor score described above).
+2. Build the heavy-atom graph (nodes = heavy atoms, edges = bonds) and split it
+   with `networkx.greedy_modularity_communities`.
+3. From each community take **one atom**: `max(community, key=lambda i: (s_i, -i))`,
+   i.e. the highest-scoring atom, with the lowest atom index as tie-break.
+   There is **no mean or pooling of the descriptors inside a community**.
+4. Sort those representatives by score, take up to ten, and if fewer than ten
+   communities exist fill the remaining qubits from the global ranking of the
+   unused atoms. The list is the qubit order q0…q9; q0 is the best representative.
+
+Only those ten atoms get an individual `Ry` gate. Every other heavy atom is a
+tail atom and is pooled, but with a different rule:
+
+- **`paper` tail (used in all reported experiments)**: tail atoms keep molecule
+  order, are split alternately by index (even → q10, odd → q11), and each tail
+  qubit gets `θ = (0.1/2)·Σχ` over its list. This is a **sum of Pauling
+  electronegativities**, not an average of importance scores. A backbone–tail
+  bond emits two `Rxx` gates (to q10 and to q11); a tail–tail bond emits none.
+- **`global` tail (ablation only)**: q10 encodes `0.25·size_fraction +
+  0.75·mean role prevalence` (heteroatom/charged/donor/acceptor flags), q11
+  encodes internal/interface bond fractions. Both are mapped into
+  `[0.05, π−0.05]`. Here there *is* an average, but only of role flags and bond
+  fractions, never of the nine importance descriptors.
+
+Community selection changes which atoms are left for the tail; it does not
+change the tail equations. Halogens are handled as follows: `hetero` is
+`atomicNum != 6`, so F, Cl, Br and I all count as heteroatoms; Cl has Pauling
+χ = 3.16 (already in the original table), while Br = 2.96, I = 2.66 and P =
+2.19 had to be added — previously they silently received χ = 1.0. TPSA
+contributions are zero for halogens (TPSA counts N/O and their attached H), so
+a chlorine atom enters the score mainly through χ, the hetero flag and its
+Crippen logP/MR contributions. There are 1079 halogen atoms in the cleaned set.
+
+## Stereochemistry: current limitation and how to encode it
+
+Canonical isomeric SMILES **retain** `@`/`@@` (`canonical_smiles(...,
+stereo=True)`), but the circuit never reads `GetChiralTag()` or
+`FindMolChiralCenters()`. All angles come from achiral quantities (element
+identity, `|x − mean|` descriptor deviations, bond order, role counts). A
+mirror image therefore produces exactly the same angles, gates and Pauli
+moments: the feature map is stereochemistry-blind. This affects 629 of the 1955
+molecules (2862 assigned tetrahedral centres).
+
+**Changing `Rxx` to `Ry` or `Rx` on some bonds does not fix this.** It only
+changes the rotation axis of an achiral angle; the two enantiomers still feed
+identical angle sequences into the circuit and give identical moments. To
+separate mirror images at least one angle must be a **pseudoscalar**, i.e. flip
+sign under reflection. Practical options, from cheapest to most physical:
+
+1. **Classical chiral features (no circuit change).** Append to the 78 moments
+   the number of R/S centres, their CIP codes, or a signed chiral volume from a
+   3-D conformer. Simple and directly testable, but chirality bypasses the
+   quantum map.
+2. **A dedicated chiral `Rz` gate (recommended minimum change).** For each
+   selected tetrahedral centre use `GetChiralTag()`: `CHI_TETRAHEDRAL_CW → +1`,
+   `CCW → −1`, and apply `Rz(±π/4)` on that atom's qubit (or on a reserved
+   qubit). `Rz` adds the complex phase that `Ry`/`Rxx` alone do not provide,
+   so mirror images become distinguishable states. E/Z double bonds can be
+   encoded analogously from `GetStereo()`.
+3. **Signed dihedral / `Rzz` or controlled-phase gates.** Embed a 3-D conformer,
+   take a signed dihedral φ around the stereocentre and apply `Rzz(φ)` between
+   the two neighbour qubits. More physically motivated, but requires conformer
+   generation and alignment, adds fragile gates, and needs a new readout to be
+   useful.
+
+Regardless of the design, the folds must be grouped by a stereo-aware key
+(current `scaffold_groups` uses the canonical isomeric SMILES, so enantiomers
+land in the same group only if their isomeric strings match) and the
+stereochemistry flag should be reported. Option 2 is the natural next
+experiment: one new gate family, no extra qubits, and a clear ablation
+(`Rz` angle set to zero) against the present baseline.
+
 ## Files
 
 | File | Content |

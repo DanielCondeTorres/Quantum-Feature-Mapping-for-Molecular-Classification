@@ -51,7 +51,7 @@ The 12‑qubit circuit is built as follows:
 5. **Readouts**: 12 `<Z>` moments and 66 `<ZZ>` moments (78 features in total).
 6. **Classifier**: a classical SVM with RBF kernel (`C = 10`) trained on the 78‑dimensional feature vectors.
 
-> The circuit is a **feature map**; the SVM makes the final prediction.
+> The circuit is a **feature map**; the SVM makes the final prediction. Community selection takes the single highest-scoring atom of each community (no descriptor averaging); only the tail pools atoms, by alternating sums of Pauling electronegativity. Stereochemistry is retained in the isomeric SMILES but ignored by the gates, so enantiomers currently produce identical features — see `results/README.md` for the mechanism and design options.
 
 ### 2.2 Descriptor weights: deliberately equal
 
