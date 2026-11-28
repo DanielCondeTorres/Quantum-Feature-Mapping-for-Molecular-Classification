@@ -273,6 +273,51 @@ variance, not the label-bearing variance, so the SVM collapses to predicting
 "permeable" for every molecule (balanced accuracy 0.500). Do not use two
 unsupervised components as the feature map for this task.
 
+## Why PC1+PC2 fails (the detailed explanation)
+
+`python -m analysis_features pca-diagnosis` separates four effects. The figure
+`pca_diagnosis.png` shows all of them.
+
+1. **PCA rotation is not the problem.** Keeping **all 78** PCs gives AUC
+   **0.8015**, exactly the same as the raw 78 standardized moments. PCA is an
+   orthogonal rotation and the isotropic RBF kernel is invariant to it. A
+   linear combination of features is fine.
+2. **Truncation is the problem.** The signal is distributed across dozens of
+   moments, not concentrated in the highest-variance directions:
+
+   | PCs kept | 1 | 2 | 3 | 5 | 10 | 20 | 40 | 78 |
+   |---|---:|---:|---:|---:|---:|---:|---:|---:|
+   | AUC (unweighted SVM) | 0.573 | 0.593 | 0.623 | 0.652 | 0.696 | 0.783 | 0.802 | 0.802 |
+   | AUC (class_weight=balanced) | 0.632 | 0.654 | 0.675 | 0.689 | 0.729 | 0.785 | 0.800 | 0.801 |
+
+   The first two PCs explain 43% of the variance but almost none of the label
+   signal. PC1 correlates with the label only **+0.17**, and more strongly with
+   **heavy-atom count (-0.30)**: it is mostly a size/composition axis. PC2 has
+   label correlation **+0.02**. Unsupervised PCA maximises variance, not class
+   separation.
+3. **No single moment carries the signal.** The best individual moment reaches
+   AUC 0.784, below the full 78-dimensional model (0.802). The discriminative
+   information is in the *joint pattern* across atoms and bonds; any 2-dimensional
+   projection throws most of it away.
+4. **The all-positive prediction is a class-imbalance artefact on top of that.**
+   The dataset is 76.4% permeable. With only two weak features, the unweighted
+   SVM puts every decision score above zero (std 0.092), so it predicts
+   "permeable" for all 1955 molecules: AUC 0.593, balanced accuracy 0.500. With
+   `class_weight="balanced"` the same two PCs give AUC 0.654 and balanced
+   accuracy 0.609, and 49% positive predictions. The kernel width is *not* the
+   cause: default gamma (0.0298) versus the 78-feature gamma (0.0128) changes
+   AUC only from 0.593 to 0.597.
+
+**And why the order/chemical comparison looks the other way round:** `source`
+(0.8805) is not chemistry, it is the deposited string's curation order leaking
+into q0; that is the signal the cleaning removes. `tpsa` as an **angle**
+(0.8073) keeps the full canonical graph and only changes the rotation values,
+so it slightly improves on Pauling (0.8015, overlapping CIs). `tpsa` or
+heteroatoms as an atom **selector** (0.779/0.771) instead choose a scattered
+set and lose backbone connectivity. So "the order is better" only holds for the
+leaky source order; among honest structure-based arms, keeping the topology
+matters more than which per-atom property is used.
+
 ## Files
 
 | File | Content |
@@ -292,6 +337,7 @@ unsupervised components as the feature map for this task.
 | `confusion_matrix_property_selectors.png` | Out-of-fold confusion matrices (2x3) for the same six selectors |
 | `four_features_benchmark.csv`, `.json` | The four requested arms: source, random q0, PC1/PC2 and TPSA |
 | `confusion_matrices_four_features.png` | The four out-of-fold confusion matrices (2x2) |
+| `pca_diagnosis.csv`, `.json`, `.png` | Rotation vs truncation, PC correlations, imbalance and score distributions |
 
 Reproduce with:
 
@@ -300,4 +346,5 @@ python -m analysis_features benchmark
 python -m analysis_features compare
 python -m analysis_features property-probe
 python -m analysis_features four-features
+python -m analysis_features pca-diagnosis
 ```

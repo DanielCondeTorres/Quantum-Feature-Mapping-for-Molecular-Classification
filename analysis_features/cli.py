@@ -7,6 +7,7 @@
     python -m analysis_features compare
     python -m analysis_features property-probe
     python -m analysis_features four-features
+    python -m analysis_features pca-diagnosis
 """
 
 from __future__ import annotations
@@ -128,6 +129,14 @@ def _compare(args: argparse.Namespace) -> None:
     print(f"\nSaved comparison artifacts to: {args.outdir}")
 
 
+def _pca_diagnosis(args: argparse.Namespace) -> None:
+    from .pca_diagnosis import diagnose
+
+    table = diagnose(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
 def _verify(args: argparse.Namespace) -> None:
     from .verify import main as verify_main
 
@@ -199,6 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     four.add_argument("--outdir", type=Path, default=Path("results"))
     four.set_defaults(func=_four_features)
+
+    diagnosis = subparsers.add_parser(
+        "pca-diagnosis", help="explain why PC1/PC2 collapse the quantum features"
+    )
+    diagnosis.add_argument("--outdir", type=Path, default=Path("results"))
+    diagnosis.set_defaults(func=_pca_diagnosis)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

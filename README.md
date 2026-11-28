@@ -67,6 +67,9 @@ python -m analysis_features property-probe
 # The four requested feature treatments + 4 confusion matrices
 python -m analysis_features four-features
 
+# Explain why PC1/PC2 collapses
+python -m analysis_features pca-diagnosis
+
 # Tests
 python -m pytest
 ```
@@ -91,6 +94,7 @@ analysis_features/
   compare.py       # main (250 subset, source) vs cleaned full dataset
   property_probe.py # random q0 vs per-atom RDKit property selectors + PCA
   four_features.py # source / random q0 / PC1-PC2 / TPSA + 4 confusion matrices
+  pca_diagnosis.py # why two PCA components collapse the 78 moments
   verify.py        # independent check of every cleaning requirement
   io.py            # read raw tables, write the six deliverable files
   cli.py           # clean / embed / summary / benchmark / compare / property-probe / verify
@@ -121,6 +125,7 @@ results/
   confusion_matrix_property_selectors.png
   four_features_benchmark.csv / .json
   confusion_matrices_four_features.png
+  pca_diagnosis.csv / .json / .png
 ```
 
 ---
@@ -538,6 +543,19 @@ Las cuatro matrices de confusión están en
 estructural (0.8073, algo por encima del 0.8015 canónico con Pauling, con IC
 solapados); PC1/PC2 no sirven: el PCA no conserva la varianza que separa las
 clases y el SVM colapsa a predecir siempre “permeable” (BalAcc 0.500).
+
+**Por qué falla `pca2`:** no es por ser una combinación lineal. Con las 78
+componentes el AUC es idéntico al de los 78 momentos originales (0.8015): la
+rotación ortogonal no pierde nada con un kernel RBF. Lo que falla es
+**quedarse con 2**: el AUC sube 0.593 → 0.696 → 0.783 → 0.802 al pasar de 2 a
+10, 20 y 40 componentes. PC1 explica 32% de la varianza pero correlaciona más
+con el tamaño molecular (-0.30) que con la etiqueta (+0.17), y PC2 apenas
+correlaciona (+0.02). Como el mejor momento individual llega solo a 0.784, la
+señal está repartida en el patrón conjunto, no en dos ejes. Además, con 76% de
+moléculas permeables y dos features débiles, el SVM sin `class_weight` deja
+todos losScores por encima de cero y predice todo como permeable; con
+`class_weight="balanced"` esos mismos 2 PC dan 0.654 y BalAcc 0.609. Detalles y
+figura en `results/pca_diagnosis.png` (`python -m analysis_features pca-diagnosis`).
 
 ---
 
