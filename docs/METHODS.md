@@ -24,12 +24,33 @@ maps both to the same parent and exposes the contradiction. Two parent choices
 were chemically ambiguous (a caffeine/ethylenediamine adduct and a
 steroid/water mixture); both are flagged in `BBBP_fragment_audit.csv`.
 
-Parents were written as canonical isomeric SMILES
-(`MolToSmiles(canonical=True, isomericSmiles=True)`). Formal charges were kept
-and never neutralised, because a protonated amine is a different permeating
-species; the net charge is recorded in the `formal_charge` column. Tautomers
-were not canonicalised or merged; RDKit's tautomer enumerator was used only to
-group structures for conflict detection.
+### Standardisation, charges and tautomers (implementation detail)
+
+After parent selection, each molecule was written with
+`Chem.MolToSmiles(parent, canonical=True, isomericSmiles=True)`. Canonical
+output gives a unique RDKit atom order, so "the first ten heavy atoms" is a
+reproducible definition rather than a property of how a row was deposited.
+This matters for the published circuit, which assigns atoms to qubits in parse
+order: the hydrochloride salt of propranolol would otherwise place Cl on q0.
+Stereochemical marks (`@`/`@@`) are deliberately retained in the canonical
+string (629 molecules), although the current circuit does not read chiral tags.
+A separate stereo-free string is produced only for auditing and conflict
+detection; it is never used as a model feature.
+
+Formal charges were kept and never neutralised. `Chem.GetFormalCharge(parent)`
+is recorded in `formal_charge` (34 structures carry a nonzero charge).
+Neutralising a protonated amine or an ionised acid would change the species
+whose permeation is being predicted, so the charged structure is retained as
+deposited.
+
+Tautomers were not canonicalised and not merged. RDKit's
+`rdMolStandardize.TautomerEnumerator().Canonicalize()` is used only through a
+stereo-free tautomer key to group structures for label-conflict detection.
+Eight tautomer groups with contradictory labels are flagged in
+`tautomer_label_conflict`; tautomers with agreeing labels are all retained.
+Canonicalising tautomers would move a proton and change the molecule, which is
+the same kind of chemical edit we avoided for invalid SMILES, charges and
+counter-ions.
 
 Structures carrying both labels were excluded, leaving 11 conflicting
 structures and removing 22 rows; the set includes propranolol, aspirin and
@@ -37,15 +58,33 @@ L-DOPA. Identical structures with the same label were collapsed, removing 62
 duplicate rows and keeping the first occurrence. The final table contains 1955
 unique molecules (1494 permeable, 461 non-permeable).
 
-For each parent we recorded heavy-atom count, heavy–heavy bond count, the
-number of atoms beyond the tenth (`max(0, heavy_atom_count - 10)`) and net
-formal charge. All elements present in the final set (B, Br, C, Cl, F, I, N, O,
-P, S) were checked against the electronegativity table used by the circuit.
-The original table contained only H, Li, Be, B, C, N, O, F, S and Cl and used a
-silent numeric fallback, so Br, I and P would have received an arbitrary value;
-we added their Pauling electronegativities (P 2.19, Br 2.96, I 2.66) explicitly
-and made an unknown element raise an error. No element in the final set is
-missing.
+### Element-coverage audit and size columns (implementation detail)
+
+All elements present in the final set (B, Br, C, Cl, F, I, N, O, P, S) were
+checked against Hannan's electronegativity table used by the circuit. That
+table is kept verbatim (H, Li, Be, B, C, N, O, F, S, Cl) so the published
+circuit remains reproducible. The audit reports three lists: `present`,
+`missing_from_hannan` = {Br, I, P}, and `missing_after_extension` = empty. The
+three missing elements were added in a separate dictionary with Pauling values
+P 2.19, Br 2.96 and I 2.66; the union is the table used by the embedding.
+`electronegativity(symbol)` now raises an error for an unknown element instead
+of the original notebook's silent `get(symbol, 1.0)`. Consequently no atom in
+the cleaned set receives a fabricated electronegativity, and every Ry angle
+`0.1·χ²` uses a real Pauling value. The audit is stored in
+`BBBP_clean_settings.json` and printed at Stage 4 of `BBBP_clean_log.txt`.
+
+For each parent, computed from heavy atoms only (hydrogen atoms and their
+bonds are excluded), we recorded:
+
+- `heavy_atom_count` = number of atoms with atomic number > 1;
+- `bond_count` = number of bonds whose two endpoints are both heavy atoms;
+- `atoms_beyond_10` = `max(0, heavy_atom_count − 10)`, i.e. the number of atoms
+  that must be compressed into the two tail qubits;
+- `formal_charge` = net formal charge of the parent.
+
+`atoms_beyond_10` is positive for 1851 of 1955 molecules (94.7%), so the tail
+is the normal case. `verify.py` checks that the formula holds and that the
+counts are positive and mutually consistent (`bond_count ≥ heavy_atom_count − 1`).
 
 The 250-molecule balanced benchmark used in the previous study was mapped
 through the same pipeline. All 250 structures survive with identical labels

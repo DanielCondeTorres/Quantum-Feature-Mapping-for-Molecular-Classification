@@ -238,6 +238,80 @@ Because no external evidence is available in the repository, the rule is conserv
 
 The full row-by-row list, including the original SMILES of each conflicting entry, is in §1.2 and in `data/processed/BBBP_excluded_molecules.csv`.
 
+### 1.4 The three data-processing decisions in detail
+
+#### Standardisation and canonical SMILES (what I actually did)
+
+1. `parse()` calls `Chem.MolFromSmiles()`; failures are the 11 rows already
+   listed in §1.2. No valence repair is attempted.
+2. `choose_parent()` keeps the largest **carbon-containing** fragment of each
+   parsed molecule; ties are broken by heavy-atom count, heteroatom count and
+   canonical SMILES, and 2 chemically ambiguous choices are flagged rather
+   than forced.
+3. Stage 3 writes `Chem.MolToSmiles(parent, canonical=True,
+   isomericSmiles=True)` into `canonical_smiles`. This gives every molecule one
+   deterministic RDKit atom order, so the first ten heavy atoms mean the same
+   thing across rows. It is the safeguard against the deposited-order leak:
+   with `strip_salts=False` the original string still puts the propranolol
+   chloride on q0, while the canonical parent does not (`verify.py` checks
+   both).
+4. **Stereochemistry is retained** in that string (`isomericSmiles=True`,
+   629 molecules carry `@`/`@@`) even though the circuit does not read chiral
+   tags. A separate `flat_smiles()` removes stereo and is used only as an
+   audit/conflict key, never as a model feature.
+
+**Charges — decision: keep them.** `Chem.GetFormalCharge(parent)` is written to
+`formal_charge` (34 charged structures) and no neutralisation is applied. A
+protonated amine or a carboxylate is a different permeating species; changing
+it would silently change the molecule being classified.
+
+**Tautomers — decision: do not canonicalise or merge them.** RDKit's
+`rdMolStandardize.TautomerEnumerator().Canonicalize()` is used only through
+`tautomer_key()` to *group* structures for label-conflict detection. Eight
+tautomer groups with contradictory labels are flagged in
+`tautomer_label_conflict`; tautomers with agreeing labels are all kept. Merging
+them would move a proton and therefore change the species, which is exactly
+the kind of chemical edit we avoided for invalid SMILES and charges.
+
+#### Element-coverage audit (what I actually did)
+
+`audit_elements()` scans every parent and returns three lists:
+`present`, `missing_from_hannan` and `missing_after_extension`.
+
+| Field | Result in the cleaned set |
+|---|---|
+| Present | B, Br, C, Cl, F, I, N, O, P, S |
+| Missing from Hannan's original table | **Br, I, P** |
+| Missing after the explicit extension | **none** |
+
+Hannan's map is kept **verbatim** (H, Li, Be, B, C, N, O, F, S, Cl) for
+reproducibility of last year's circuit. The three missing elements are added in
+a separate dictionary with Pauling values **P 2.19, Br 2.96, I 2.66**; the
+union is `PAULING_EN`. `electronegativity(symbol)` now raises `KeyError` for an
+unknown element instead of the notebook's silent `get(symbol, 1.0)`. The full
+audit is in `BBBP_clean_settings.json` (`elements`) and log Stage 4, and
+`verify.py` checks coverage, the exact missing-from-Hannan set and that the
+Hannan table is unchanged. Consequence: every backbone angle `0.1·χ²` uses a
+real Pauling value; no atom receives a fabricated χ = 1.0.
+
+#### The three size columns (what I actually did)
+
+Computed per parent in `cleaning.py` before deduplication, from the **heavy
+atoms only**:
+
+| Column | Definition | Use |
+|---|---|---|
+| `heavy_atom_count` | number of atoms with `atomicNum > 1` (hydrogens excluded) | selects the ten backbone atoms; determines tail size |
+| `bond_count` | number of bonds whose **both** endpoints are heavy atoms (bonds to H excluded) | gates and the `bonds ≥ atoms − 1` sanity check |
+| `atoms_beyond_10` | `max(0, heavy_atom_count − 10)` | how many atoms are compressed into q10/q11 |
+
+`atoms_beyond_10 > 0` for **1851 of 1955** molecules (94.7%), so tail
+compression is the rule rather than the exception. The three columns, together
+with `formal_charge`, are present in `BBBP_clean_full.csv`; `verify.py` checks
+that `atoms_beyond_10` equals the formula and that counts are positive and
+mutually consistent. A more detailed, paste-ready version of all of this is in
+`docs/METHODS.md`.
+
 ---
 
 ## 2. Methods: from molecular graph to circuit
