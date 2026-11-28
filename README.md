@@ -231,6 +231,51 @@ Ranked ideas, with the evidence status stated explicitly:
 Ideas 1–2 are backed by the results above; 3–6 are **proposals, not validated
 results** and are listed so the limitations are explicit rather than hidden.
 
+**If I had to pick one change:** combine (1) and (2) — keep the chemistry-driven,
+equal-weight score but force the ten backbone atoms to be a **connected
+subgraph**: take the community representatives, then join them with a minimum
+Steiner tree over the heavy-atom graph. Feed the resulting 78 moments through a
+hybrid kernel with Morgan/composition descriptors. The diagnosis supports this
+more than adding gates: random backbones have ≈ 4.5 internal backbone bonds and
+≈ 29 gates and score 0.634; canonical has 9.14 bonds / 12.24 gates and scores
+0.801; chemical coverage has 7.76 bonds / 15.78 gates and scores 0.766.
+**Connectivity, not gate count, tracks AUC.** A connected community backbone
+should keep community coverage without the duplicated interface gates that
+overload q10/q11. Chiral `Rz` gates fix a correctness problem, but with only 6
+stereo-conflict rows they are unlikely to move AUC much. Any such change must be
+evaluated on the same folds and beat the 0.882 Morgan baseline before it is
+reported as an improvement.
+
+### 2.6 Validation protocol: exactly how many molecules train and test
+
+All numbers reported in this README (three arms and the 2×3 comparison) come
+from **out-of-fold predictions on the same 1955 molecules**. The splitter is
+`StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` with 1016
+Bemis–Murcko scaffold groups as grouping variable, so a scaffold never appears
+in both train and test of the same fold. The scaler and the SVM are fitted
+**inside each training fold only**.
+
+| Item | Value |
+|---|---|
+| Molecules (cleaned) | **1955** (461 label 0, 1494 label 1) |
+| Scaffold groups | 1016 |
+| Folds | 5, scaffold-disjoint, seed 42 |
+| Train per fold | **1564** (369 or 368 label 0; 1195 or 1196 label 1) |
+| Test per fold | **391** (92 or 93 label 0; 299 or 298 label 1) |
+| Distinct test scaffolds per fold | 199, 200, 204, 206, 207 |
+| Cumulative train exposures / test predictions | 7820 / **1955** |
+
+Every molecule is predicted exactly once (out of fold), so the confusion
+matrices sum to 1955 — no molecule is scored by a model trained on itself.
+Fold 1: train 1564 (369/1195), test 391 (92/299); fold 2: train 1564
+(368/1196), test 391 (93/298); folds 3–5: train 1564 (369/1195), test 391
+(92/299). Each fold's test set contains 199–207 distinct scaffolds.
+
+For reference, the paper-style protocol in `random_qubit_test.py` also reports
+10 × `StratifiedShuffleSplit(test_size=0.2, random_state=42)` — likewise 1564
+train / 391 test per split, but **not scaffold-disjoint**. It is reported
+separately and is not the basis of the headline numbers.
+
 ---
 
 ## 3. Reproducibility
