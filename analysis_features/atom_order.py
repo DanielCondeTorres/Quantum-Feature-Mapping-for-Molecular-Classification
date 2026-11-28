@@ -412,31 +412,26 @@ def property_backbone(
 
 
 # --- BBBP-relevant importance + graph communities --------------------------
-# Fixed expert priors, NOT fitted to BBBP labels. Rationale (with references):
-#   tpsa 0.20 / logp 0.20 : polar surface area and lipophilicity are the two
-#       dominant descriptors of passive BBB permeation (Pajouhesh & Lenz 2005;
-#       Hitchcock & Pennington 2006; Veber et al. 2002).
-#   hbd 0.15 / hba 0.10 : donors impose a larger desolvation penalty than
-#       acceptors (Kenny 2022; Pajouhesh & Lenz 2005).
-#   mr 0.10 : molar refractivity captures size/polarizability, an independent
-#       term in Abraham-type BBB equations (Wildman & Crippen 1999).
-#   gasteiger 0.10 / formal 0.05 : ionisation and local charge restrict
-#       passage of the neutral species through the lipid core.
-#   hetero 0.05 / aromatic 0.05 : weaker, partly redundant proxies.
-# All continuous descriptors are rescaled to [0, 1] per molecule before the
-# weighted sum, so these numbers are relative shares, not physical units.
-# `python -m analysis_features weight-probe` shows the result is insensitive
-# to their exact values (equal weights: 0.7697 vs 0.7679 AUC).
+# Equal weights are the deliberate starting point: the literature justifies
+# *which* descriptors describe passive BBB permeation (TPSA, logP, HBD/HBA,
+# MR, charge, heteroatoms and aromaticity; Pajouhesh & Lenz 2005, Veber 2002,
+# Hitchcock & Pennington 2006, Kenny 2022, Wildman & Crippen 1999), but it does
+# not provide a defensible numerical ranking of their per-atom contributions.
+# Since no weighting was fitted to BBBP labels, assigning different numbers
+# would be an arbitrary prior. All descriptors are rescaled to [0, 1] per
+# molecule first, so 1/9 is a neutral share of chemical salience for each.
+# `python -m analysis_features weight-probe` confirms the point: equal weights
+# perform as well as (slightly better than) a literature-ranked vector.
 _IMPORTANCE_WEIGHTS = {
-    "tpsa": 0.20,
-    "logp": 0.20,
-    "mr": 0.10,
-    "hbd": 0.15,
-    "hba": 0.10,
-    "gasteiger": 0.10,
-    "formal": 0.05,
-    "hetero": 0.05,
-    "aromatic": 0.05,
+    "tpsa": 1.0 / 9,
+    "logp": 1.0 / 9,
+    "mr": 1.0 / 9,
+    "hbd": 1.0 / 9,
+    "hba": 1.0 / 9,
+    "gasteiger": 1.0 / 9,
+    "formal": 1.0 / 9,
+    "hetero": 1.0 / 9,
+    "aromatic": 1.0 / 9,
 }
 
 

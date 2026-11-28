@@ -6,15 +6,15 @@
     "tail_mode": "paper",
     "classifier": "RBF SVC C=10",
     "importance_weights": {
-      "tpsa": 0.2,
-      "logp": 0.2,
-      "mr": 0.1,
-      "hbd": 0.15,
-      "hba": 0.1,
-      "gasteiger": 0.1,
-      "formal": 0.05,
-      "hetero": 0.05,
-      "aromatic": 0.05
+      "tpsa": 0.1111111111111111,
+      "logp": 0.1111111111111111,
+      "mr": 0.1111111111111111,
+      "hbd": 0.1111111111111111,
+      "hba": 0.1111111111111111,
+      "gasteiger": 0.1111111111111111,
+      "formal": 0.1111111111111111,
+      "hetero": 0.1111111111111111,
+      "aromatic": 0.1111111111111111
     }
   },
   "arms": [
@@ -39,20 +39,20 @@
     {
       "arm": "importance",
       "seed": null,
-      "accuracy": 0.8061,
-      "balanced_accuracy": 0.7037,
-      "auc": 0.7777,
-      "shuffle_accuracy_mean": 0.8261,
-      "f1": 0.8762
+      "accuracy": 0.8194,
+      "balanced_accuracy": 0.7259,
+      "auc": 0.7964,
+      "shuffle_accuracy_mean": 0.8448,
+      "f1": 0.8843
     },
     {
       "arm": "community_importance",
       "seed": null,
-      "accuracy": 0.8036,
-      "balanced_accuracy": 0.7035,
-      "auc": 0.7679,
-      "shuffle_accuracy_mean": 0.8192,
-      "f1": 0.8742
+      "accuracy": 0.7887,
+      "balanced_accuracy": 0.69,
+      "auc": 0.7745,
+      "shuffle_accuracy_mean": 0.8059,
+      "f1": 0.8638
     }
   ]
 }

@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 
+from .atom_order import _IMPORTANCE_WEIGHTS
 from .benchmark import RESULTS_DIR, load_frame, scaffold_groups
 from .embedding import embed
 from .random_qubit_test import Evaluation, scaffold_eval, shuffle_eval
@@ -110,17 +111,7 @@ def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
             "fold_seed": 42,
             "tail_mode": "paper",
             "classifier": "RBF SVC C=10",
-            "importance_weights": {
-                "tpsa": 0.20,
-                "logp": 0.20,
-                "mr": 0.10,
-                "hbd": 0.15,
-                "hba": 0.10,
-                "gasteiger": 0.10,
-                "formal": 0.05,
-                "hetero": 0.05,
-                "aromatic": 0.05,
-            },
+            "importance_weights": dict(_IMPORTANCE_WEIGHTS),
         },
         "arms": json.loads(table.to_json(orient="records")),
     }

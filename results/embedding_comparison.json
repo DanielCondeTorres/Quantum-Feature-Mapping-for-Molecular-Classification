@@ -48,20 +48,20 @@
       "arm": "community_importance",
       "angle_property": "pauling",
       "selection": "best RDKit BBBP scorer per graph community, then global ranking",
-      "auc": 0.7841,
-      "accuracy": 0.8077,
-      "balanced_accuracy": 0.7099,
-      "TN": 242,
-      "FP": 219,
-      "FN": 157,
-      "TP": 1337
+      "auc": 0.7745,
+      "accuracy": 0.7887,
+      "balanced_accuracy": 0.69,
+      "TN": 232,
+      "FP": 229,
+      "FN": 184,
+      "TP": 1310
     },
     {
       "embedding": "new_features",
       "arm": "smiles_order",
       "angle_property": "importance",
       "selection": "first ten atoms in the deposited SMILES parse order",
-      "auc": 0.8667,
+      "auc": 0.8666,
       "accuracy": 0.8353,
       "balanced_accuracy": 0.7602,
       "TN": 285,
@@ -74,7 +74,7 @@
       "arm": "random_backbone",
       "angle_property": "importance",
       "selection": "ten random heavy atoms from the same parsed molecule (seed 0)",
-      "auc": 0.6756,
+      "auc": 0.6754,
       "accuracy": 0.7616,
       "balanced_accuracy": 0.6093,
       "TN": 148,
@@ -87,13 +87,13 @@
       "arm": "community_importance",
       "angle_property": "importance",
       "selection": "best RDKit BBBP scorer per graph community, then global ranking",
-      "auc": 0.7446,
-      "accuracy": 0.7913,
-      "balanced_accuracy": 0.6715,
-      "TN": 205,
-      "FP": 256,
-      "FN": 152,
-      "TP": 1342
+      "auc": 0.7315,
+      "accuracy": 0.7877,
+      "balanced_accuracy": 0.6751,
+      "TN": 213,
+      "FP": 248,
+      "FN": 167,
+      "TP": 1327
     }
   ]
 }

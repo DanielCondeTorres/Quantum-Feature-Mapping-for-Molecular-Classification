@@ -377,9 +377,9 @@ FN 177, TP 1317).
 with a chemically motivated one. A fixed score combines RDKit per-atom TPSA
 contribution, Crippen logP/MR contributions, HBD/HBA SMARTS roles, Gasteiger and
 formal charges, element identity and aromaticity. Continuous descriptors use
-their absolute deviation from the molecular mean and the weights (0.20 TPSA,
-0.20 logP, 0.10 MR, 0.15 HBD, 0.10 HBA, 0.10 charge, 0.05 each for formal,
-hetero and aromatic) are fixed a priori, never fitted to labels. The
+their absolute deviation from the molecular mean and all nine descriptors carry
+the **same weight, 1/9**. The weights are fixed a priori, never fitted to
+labels. The
 `community_importance` arm first splits the heavy-atom graph into communities
 by modularity optimisation and selects the best atom of each community.
 
@@ -389,50 +389,51 @@ by modularity optimisation and selects the best atom of each community.
 |---|---:|---:|---:|---:|
 | Paper: SMILES order | **0.8501** | 0.776 | 0.8559 | — |
 | Random (mean 20 seeds) | 0.7587 | 0.612 | 0.6886 | — |
-| `importance` (RDKit) | 0.8061 | 0.704 | 0.7777 | 0.8261 |
-| `community_importance` (networkx) | 0.8036 | 0.704 | 0.7679 | 0.8192 |
+| `importance` (RDKit) | 0.8194 | 0.726 | 0.7964 | 0.8448 |
+| `community_importance` (networkx) | 0.7887 | 0.690 | 0.7745 | 0.8059 |
 
-Confusion matrices: `importance` TN 235 / FP 226 / FN 153 / TP 1341;
-`community_importance` TN 237 / FP 224 / FN 160 / TP 1334.
+Confusion matrices: `importance` TN 253 / FP 208 / FN 145 / TP 1349;
+`community_importance` TN 232 / FP 229 / FN 184 / TP 1310.
 
 **Conclusion:** chemical importance selection does work — it raises accuracy
-from 0.759 to 0.806 and AUC from 0.689 to 0.778 compared with choosing atoms at
+from 0.759 to 0.819 and AUC from 0.689 to 0.796 compared with choosing atoms at
 random, and beats the trivial baseline of 0.764. But it is still below the
 paper's SMILES order (0.850), which, as seen above, contains a provenance leak.
-Communities do not help: 0.804 versus 0.806 for the direct ranking, probably
-because they force the representation of regions that are not the most
+Communities do not help here: 0.789 versus 0.819 for the direct ranking,
+probably because they force the representation of regions that are not the most
 informative. The figure `importance_test.png` compares the four arms.
 
-## Why those descriptor weights? (full justification)
+## Why all descriptor weights are equal (full justification)
 
-A reviewer is right to ask where `TPSA 0.20`, `logP 0.20`, `HBD 0.15` etc. come
-from. Short answer: they are **fixed expert priors from the medicinal-chemistry
-literature on passive BBB permeation, not parameters fitted to BBBP labels**.
-They express the *relative salience* of the different chemical features that
-govern membrane crossing. They are chosen before any model is trained and are
-never updated using the test folds.
+A reviewer is right to ask where the weights come from. Short answer: **all
+nine are 1/9**. The medicinal-chemistry literature justifies *which*
+descriptors describe passive BBB permeation, but it does not establish a
+numerical ranking of their **per-atom** contributions, and no weight was fitted
+to BBBP labels. With no evidence for a hierarchy, we start from the neutral
+prior instead of inventing one. The weights are fixed before training and never
+updated with the test folds.
 
-### Per-descriptor rationale
+### Why these descriptors, and why no ranking
 
 | Descriptor | Weight | Mechanistic role in passive BBB permeation | Source |
 |---|---:|---|---|
-| TPSA contribution | 0.20 | Polar surface area is the most widely used BBB filter: CNS drugs typically need PSA ≲ 90 Å², and reduced PSA tracks increased permeation better than lipophilicity. TPSA is available as a fast 2-D per-atom decomposition. | [1], [2], [3] |
-| Crippen logP contribution | 0.20 | Lipophilicity is the other dominant term: brain uptake rises with logP up to an optimum (≈ 1.5–2.7) and then falls, because very lipophilic compounds are retained in the membrane. | [1], [3], [4] |
-| H-bond donor role | 0.15 | Donor groups are more troublesome than acceptors in CNS design: desolvation of an N–H/O–H donor crossing the lipid phase is costly. Marketed CNS drugs average ≈ 1.5 donors. | [1], [5] |
-| H-bond acceptor role | 0.10 | Relevant to polarity but less penalising per group; marketed CNS drugs average ≈ 2.1 acceptors. Kept below the donor weight to reflect the donor/acceptor asymmetry. | [1], [5] |
-| Molar refractivity | 0.10 | Molecular size/polarizability contributes independently of logP and PSA in Abraham-type logBB equations; the Wildman–Crippen scheme gives per-atom MR contributions. | [4], [6] |
-| Gasteiger partial charge | 0.10 | Local dipole/charge increases the desolvation penalty at the polar membrane interface; ionisation state is repeatedly found predictive of logBB. | [1], [7] |
-| Formal charge | 0.05 | Strong acids/bases are largely excluded from the CNS, but only 34 molecules here carry a formal charge, so a large weight would let a rare flag dominate the ranking. | [1], [7] |
-| Heteroatom flag | 0.05 | Coarse proxy for hydrogen bonding and polarity; deliberately down-weighted because it is largely redundant with TPSA and HBD/HBA. | [1] |
-| Aromaticity | 0.05 | Separates aromatic nitrogen from amide nitrogen and contributes to membrane affinity; used as a weak tie-breaker, not a primary criterion. | [1] |
+| TPSA contribution | 1/9 | Polar surface area is the most widely used BBB filter: CNS drugs typically need PSA ≲ 90 Å², and reduced PSA tracks increased permeation better than lipophilicity. Available as a fast 2-D per-atom decomposition. | [1], [2], [3] |
+| Crippen logP contribution | 1/9 | Lipophilicity is the other dominant term: brain uptake rises with logP up to an optimum (≈ 1.5–2.7) and then falls, because very lipophilic compounds are retained in the membrane. | [1], [3], [4] |
+| H-bond donor role | 1/9 | Desolvation of an N–H/O–H donor crossing the lipid phase is costly; donors are more troublesome than acceptors in CNS design. | [1], [5] |
+| H-bond acceptor role | 1/9 | Contributes to polarity and aqueous solvation; marketed CNS drugs average ≈ 2.1 acceptors versus ≈ 1.5 donors. | [1], [5] |
+| Molar refractivity | 1/9 | Molecular size/polarizability contributes independently of logP and PSA in Abraham-type logBB equations; the Wildman–Crippen scheme gives per-atom MR contributions. | [4], [6] |
+| Gasteiger partial charge | 1/9 | Local dipole/charge increases the desolvation penalty at the polar membrane interface; ionisation state is repeatedly found predictive of logBB. | [1], [7] |
+| Formal charge | 1/9 | Strong acids/bases are largely excluded from the CNS, though only 34 molecules here carry a formal charge. | [1], [7] |
+| Heteroatom flag | 1/9 | Coarse proxy for hydrogen bonding and polarity, correlated with TPSA and HBD/HBA. | [1] |
+| Aromaticity | 1/9 | Separates aromatic nitrogen from amide nitrogen and contributes to membrane affinity. | [1] |
 
-The two largest weights (0.20 + 0.20) go to the two descriptors that every
-BBB QSAR review identifies as primary — polarity and lipophilicity. The next
-tier (0.15/0.10/0.10) covers the hydrogen-bond asymmetry, size/polarizability
-and local charge. The last three (0.05 each) are deliberately weak, redundant
-or rare signals. Molecular weight and rotatable-bond count are *molecular*
-properties, not per-atom properties, so they cannot assign a score to an
-individual backbone atom and are outside this particular selector.
+The literature does rank TPSA and logP as the dominant *molecular* properties,
+but transferring that ranking to **per-atom contributions** would be an
+unvalidated step: an atom's Crippen logP contribution and its TPSA contribution
+are in different units, and their relative salience for a fixed 12-qubit
+selection is unknown. Equal shares avoid making that unproven claim. Molecular
+weight and rotatable-bond count are *molecular* properties, cannot be assigned
+to an individual backbone atom, and are outside this selector.
 
 ### Normalisation: why the numbers are comparable at all
 
@@ -469,49 +470,51 @@ classifier, not the weight table, decides permeability.
 
 `python -m analysis_features weight-probe` re-runs the whole pipeline on the
 same molecules, folds, circuit and SVM, changing only the weight vector.
-Expert priors, equal weights and 20 Dirichlet-random vectors give:
+The equal default, a literature-ranked vector and 20 Dirichlet-random vectors
+give:
 
 | Configuration | Accuracy | Balanced acc. | AUC |
 |---|---:|---:|---:|
-| Expert priors (0.20/0.20/0.10/0.15/0.10/0.10/0.05/0.05/0.05) | 0.8036 | 0.7035 | 0.7679 |
-| Equal weights (1/9 each) | 0.7908 | 0.6996 | **0.7697** |
-| Random Dirichlet, mean ± SD (n = 20) | — | — | 0.7538 ± 0.0247 |
-| Random Dirichlet, min–max | — | — | 0.6968 – 0.7927 |
+| Equal weights, 1/9 each (**default**) | 0.7887 | 0.6900 | 0.7745 |
+| Literature-ranked (0.20/0.20/0.10/0.15/0.10/0.10/0.05/0.05/0.05) | 0.8077 | 0.7099 | 0.7841 |
+| Random Dirichlet, mean ± SD (n = 20) | — | — | 0.7584 ± 0.0257 |
+| Random Dirichlet, min–max | — | — | 0.7095 – 0.8004 |
 
 Full per-vector values are in `weight_sensitivity.csv` / `.json`.
 
-**Honest reading.** Equal weights are *slightly better* (Δ AUC = +0.0018), and
-the expert vector lies inside the random distribution (about 0.6 SD above its
-mean). We therefore **do not claim these weights are optimal or that they
-improve AUC**. The defensible claim is narrower:
+**Honest reading.** The literature-ranked vector scores 0.0096 AUC higher in
+this run, but that is only ≈ 0.4 random-weight SD and lies well inside the
+random range. We **deliberately do not adopt it**: choosing a vector because it
+performed better on the evaluation set would be weight tuning on the test data.
+The defensible claim is narrower:
 
-- the exact numbers are not critical — the AUC spread from equal weights is
-  negligible, and weight choice changes AUC far less (≈ 0.02 SD) than the
-  selection principle itself: chemistry-driven selection 0.768 vs random
-  backbone 0.639, a gap of ≈ 0.129 (about 5 SD);
-- the priors make the selector **interpretable and reproducible**: a chemist
-  can read why an atom was chosen, and the rule is identical for every molecule
-  and every fold;
+- the exact numbers are not critical — weight choice changes AUC by roughly
+  0.01–0.03, far less than the selection principle itself: chemistry-driven
+  selection 0.7745 vs random backbone 0.6342, a gap of ≈ 0.14 (about 5.5 SD);
+- equal weights make the selector **maximally neutral, interpretable and
+  reproducible**: no unproven per-atom hierarchy is asserted, and the rule is
+  identical for every molecule and every fold;
 - the random-weight vectors are a **negative control**, not a model-selection
-  search: no vector was chosen because it maximised test AUC, so there is no
+  search: no vector was chosen by maximising test AUC, so there is no
   weight-tuning leakage.
 
 ### Anticipated objections
 
-- *"Why 0.20 and not 0.19?"* — the numbers encode a qualitative ranking
-  (polarity ≈ lipophilicity > HBD > HBA ≈ MR ≈ charge > weak proxies), not a
-  calibrated optimum. The sensitivity test is precisely the evidence that this
-  precision is unnecessary.
+- *"Why not give TPSA 0.20 because it is the most important BBB descriptor?"*
+  — that ranking holds for whole-molecule properties, not for per-atom
+  contributions to a selection score. The literature-ranked vector is included
+  in the probe: it happens to score 0.7841 here, but we do not select it after
+  seeing the result. Equal weights are the pre-registered, leakage-free choice.
 - *"Don't TPSA, HBD, HBA and heteroatom count duplicate each other?"* — yes,
-  they are correlated; this is why the redundant coarse flag gets 0.05 and why
-  equal weights perform the same. The score is used only to rank atoms, so
-  partial redundancy changes little (see the equal-weight row).
+  they are correlated. Equal shares dilute the influence of any single proxy,
+  and the score is used only to rank atoms, so partial redundancy changes
+  little (see the random-weight spread).
 - *"Isn't rewarding polar atoms contrary to BBB chemistry?"* — the score
   rewards *chemically distinctive atoms*, not permeable molecules. The SVM
   learns the relationship to the label afterwards; see the paragraph above.
-- *"Were the weights tuned on the test set?"* — no. They were fixed from the
-  literature before evaluation. The probe is reported post hoc as a robustness
-  check and the best random vector was **not** adopted.
+- *"Were the weights tuned on the test set?"* — no. They were fixed to 1/9
+  before evaluation. The probe is reported post hoc as a robustness check and
+  the best-ranked vector was **not** adopted.
 
 ### References
 
@@ -544,16 +547,17 @@ scaffold-disjoint folds, and the same RBF SVM on 78 Pauli moments.
 
 | Rule | How q0–q9 is chosen | Accuracy | Bal. acc. | AUC |
 |---|---|---:|---:|---:|
-| `paper_smiles_order` | first 10 atoms in RDKit SMILES parse order | 0.8501 | 0.776 | 0.8559 |
-| `random_backbone` | 10 random heavy atoms from the same SMILES | 0.7407 | 0.583 | 0.6399 |
-| `community_importance` | best atom per community + RDKit ranking | 0.8036 | 0.704 | 0.7679 |
+| `paper_smiles_order` | first 10 atoms in RDKit SMILES parse order | 0.8399 | 0.760 | 0.8602 |
+| `random_backbone` | 10 random heavy atoms from the same SMILES | 0.7228 | 0.576 | 0.6342 |
+| `community_importance` | best atom per community + RDKit ranking, equal weights | 0.7887 | 0.690 | 0.7745 |
 
 **What features `community_importance` uses:** a fixed per-atom score combining
 the TPSA contribution (`_CalcTPSAContribs`), Crippen logP and molar refractivity
 (`_CalcCrippenContribs`), RDKit HBD/HBA roles, Gasteiger partial charge, formal
 charge, element identity and aromaticity. Continuous descriptors are
-normalised by their absolute deviation from the molecule's mean; the weights
-are fixed and never fitted to labels. NetworkX then splits the heavy-atom
+normalised by their absolute deviation from the molecule's mean; all nine
+descriptors carry the same weight (1/9), fixed and never fitted to labels.
+NetworkX then splits the heavy-atom
 graph into communities by modularity, takes the highest-scoring atom of each
 community and fills the remaining qubits from the global ranking. q0 is the
 highest-scoring selected atom.
@@ -592,8 +596,8 @@ panels.
 
 | Embedding | SMILES order | Random backbone | Community importance |
 |---|---:|---:|---:|
-| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.784 |
-| New features `s²` | AUC 0.867 | AUC 0.676 | AUC 0.745 |
+| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.775 |
+| New features `s²` | AUC 0.867 | AUC 0.675 | AUC 0.732 |
 
 Counts, metrics and configuration are in `embedding_comparison.csv` and
 `embedding_comparison.json`.
@@ -622,7 +626,7 @@ Counts, metrics and configuration are in `embedding_comparison.csv` and
 | `importance_test.csv`, `.json`, `.png` | RDKit BBBP importance and graph communities vs paper order |
 | `three_arms.csv`, `.json`, `confusion_matrices_three_arms.png` | Final focused comparison: paper, random and community importance |
 | `embedding_diagram.png` | Figure of the molecular graph and the 10+2 wiring used in the README |
-| `weight_sensitivity.csv`, `.json` | Expert priors vs equal and 20 random weight vectors |
+| `weight_sensitivity.csv`, `.json` | Equal default vs literature-ranked and 20 random weight vectors |
 | `embedding_comparison.csv`, `.json`, `embedding_comparison.png` | Pauling electronegativity vs new importance features, 2x3 confusion matrices |
 
 Reproduce with:

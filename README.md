@@ -53,25 +53,25 @@ The 12‑qubit circuit is built as follows:
 
 > The circuit is a **feature map**; the SVM makes the final prediction.
 
-### 2.2 Descriptor weights and why they have those values
+### 2.2 Descriptor weights: deliberately equal
 
-The community‑importance strategy scores each heavy atom with nine descriptors. **The weights are fixed expert priors derived from the medicinal‑chemistry literature on passive BBB permeation; they are never fitted to BBBP labels**, so no test information enters the atom selection.
+The community‑importance strategy scores each heavy atom with nine descriptors. **All nine carry the same weight, 1/9 ≈ 0.111.** The BBB literature justifies the *choice* of descriptors — they are the per‑atom quantities most often associated with passive permeation — but it does not give a defensible numerical ranking of their per‑atom contributions, and we fit no weight to BBBP labels. Without evidence for a hierarchy, different numbers would be an arbitrary prior, so equal weights are the neutral starting point.
 
-| Descriptor | RDKit source | Weight | Basis for the weight |
+| Descriptor | RDKit source | Weight | Why the descriptor is included |
 |---|---|---:|---|
-| TPSA contribution | `rdMolDescriptors._CalcTPSAContribs` | 0.20 | Polar surface area is the single most used BBB filter: CNS compounds typically need PSA < 90 Å², and reduced PSA correlates with permeation rate better than lipophilicity [1, 2, 3]. |
-| LogP contribution | `rdMolDescriptors._CalcCrippenContribs` | 0.20 | Lipophilicity is the other dominant term; brain uptake follows a parabolic relationship with logP (optimum ≈ 1.5–2.7) [1, 4]. |
-| H‑bond donors | `BaseFeatures.fdef` | 0.15 | Donors impose a larger desolvation penalty than acceptors and are more restrictive in CNS design [1, 5]. |
-| H‑bond acceptors | `BaseFeatures.fdef` | 0.10 | Relevant but less penalising than donors; marketed CNS drugs average ≈ 2.1 acceptors vs ≈ 1.5 donors [1, 5]. |
-| Molar refractivity | `_CalcCrippenContribs` | 0.10 | Size/polarizability appears as an independent term in Abraham‑type BBB equations [4, 6]. |
-| Gasteiger partial charge | `AllChem.ComputeGasteigerCharges` | 0.10 | Local polarity and ionisation state govern desolvation at the membrane interface [1, 7]. |
-| Formal charge | `atom.GetFormalCharge()` | 0.05 | Strong acids/bases are largely excluded from the CNS, but charges are rare here (34 structures), so a small weight prevents domination [1, 7]. |
-| Heteroatom flag | `atom.GetAtomicNum() != 6` | 0.05 | Coarse proxy for hydrogen bonding and PSA; deliberately small because it is redundant with the descriptors above [1]. |
-| Aromaticity | `atom.GetIsAromatic()` | 0.05 | Distinguishes aromatic N from amide N and contributes to membrane affinity; a weak tie‑breaker [1]. |
+| TPSA contribution | `rdMolDescriptors._CalcTPSAContribs` | 1/9 | The most used BBB filter: CNS compounds typically need PSA < 90 Å² [1, 2, 3]. |
+| LogP contribution | `rdMolDescriptors._CalcCrippenContribs` | 1/9 | Lipophilicity is the other dominant term, with an optimum around logP 1.5–2.7 [1, 4]. |
+| H‑bond donors | `BaseFeatures.fdef` | 1/9 | Donors carry a larger desolvation penalty than acceptors [1, 5]. |
+| H‑bond acceptors | `BaseFeatures.fdef` | 1/9 | Polarity relevant to membrane crossing, but less penalising [1, 5]. |
+| Molar refractivity | `_CalcCrippenContribs` | 1/9 | Size/polarizability is an independent term in Abraham‑type BBB equations [4, 6]. |
+| Gasteiger partial charge | `AllChem.ComputeGasteigerCharges` | 1/9 | Local charge affects desolvation at the membrane interface [1, 7]. |
+| Formal charge | `atom.GetFormalCharge()` | 1/9 | Ionised species cross poorly, though rare in this dataset (34 structures) [1, 7]. |
+| Heteroatom flag | `atom.GetAtomicNum() != 6` | 1/9 | Coarse proxy for hydrogen bonding and polarity [1]. |
+| Aromaticity | `atom.GetIsAromatic()` | 1/9 | Separates aromatic N from amide N and contributes to membrane affinity [1]. |
 
-Each continuous descriptor is rescaled **within each molecule** as `|x_i − mean| / max_j |x_j − mean|`, so it lies in [0, 1] regardless of its physical unit (Å², log units, e). Binary flags are already in {0, 1}. The weights sum to one, so the score is a dimensionless weighted average: they are *relative shares of chemical salience*, not physically comparable coefficients. Note that this score selects **which atoms are resolved by the ten qubits** — it is not a permeability prediction and it is not added to the classifier features; the SVM on the 78 Pauli moments makes the label decision.
+Each continuous descriptor is rescaled **within each molecule** as `|x_i − mean| / max_j |x_j − mean|`, so it lies in [0, 1] regardless of its physical unit (Å², log units, e). Binary flags are already in {0, 1}. The weights sum to one, so the score is a dimensionless weighted average: *relative shares of chemical salience*, not physically comparable coefficients. Note that this score selects **which atoms are resolved by the ten qubits** — it is not a permeability prediction and is not added to the classifier features; the SVM on the 78 Pauli moments makes the label decision.
 
-**Are these numbers optimal? No, and we do not claim they are.** `python -m analysis_features weight-probe` re-runs the identical pipeline with equal weights and 20 random Dirichlet weight vectors: expert priors give AUC **0.7679**, equal weights **0.7697** (Δ = 0.0018), and random draws **0.7538 ± 0.0247** [0.6968, 0.7927]. The exact weights are therefore not critical; what matters is that atom selection is chemistry‑driven rather than random (0.768 vs 0.639 AUC, a gap ≈ 5× the random‑weight standard deviation). Full justification, sensitivity table and references: `results/README.md`.
+**Does the choice matter?** `python -m analysis_features weight-probe` compares the equal default with a literature‑ranked vector (0.20 TPSA, 0.20 logP, …) and 20 random Dirichlet vectors, on identical folds, circuit and SVM: equal **0.7745**, literature‑ranked **0.7841**, random **0.7584 ± 0.0257** [0.7095, 0.8004]. The literature vector is 0.0096 AUC higher in this run, well inside the random spread — but we deliberately **do not adopt it**, because picking the vector by test AUC would be tuning on the evaluation set. The defensible claim is robustness: weight choice moves AUC by ≈ 0.01–0.03, whereas chemistry‑driven atom selection beats a random backbone by 0.7745 vs 0.6342 (≈ 0.14, about 5.5 SD). Full justification, sensitivity table, objections and references: `results/README.md`.
 
 [1] Pajouhesh & Lenz, *NeuroRx* 2:541–553 (2005). [2] Veber et al., *J. Med. Chem.* 45:2615–2623 (2002). [3] Hitchcock & Pennington, *J. Med. Chem.* 49:7559–7583 (2006). [4] Hansch/Leo analysis in [1]. [5] Kenny, *J. Med. Chem.* 65:14261–14275 (2022). [6] Wildman & Crippen, *J. Chem. Inf. Comput. Sci.* 39:868–873 (1999). [7] Muehlbacher et al., *J. Comput.-Aided Mol. Des.* 25:1095–1106 (2011).
 
@@ -79,9 +79,9 @@ Each continuous descriptor is rescaled **within each molecule** as `|x_i − mea
 
 | Arm | Accuracy | Balanced accuracy | AUC |
 |---|---|---|---|
-| `paper_smiles_order` | 0.8501 | 0.7760 | 0.8559 |
-| `random_backbone` | 0.7407 | 0.5828 | 0.6399 |
-| `community_importance` | 0.8036 | 0.7035 | 0.7679 |
+| `paper_smiles_order` | 0.8399 | 0.7603 | 0.8602 |
+| `random_backbone` | 0.7228 | 0.5764 | 0.6342 |
+| `community_importance` | 0.7887 | 0.6900 | 0.7745 |
 
 The **confusion matrices** for each arm are shown in a single figure below (generated by `python -m analysis_features three-arms`).
 
@@ -95,8 +95,8 @@ The new embedding (`analysis_features/embedding_with_importance.py`) parameteris
 
 | Embedding | SMILES order | Random backbone | Community importance |
 |---|---:|---:|---:|
-| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.784 |
-| New features `s²` | AUC 0.867 | AUC 0.676 | AUC 0.745 |
+| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.775 |
+| New features `s²` | AUC 0.867 | AUC 0.675 | AUC 0.732 |
 
 ![Pauling vs new features](results/embedding_comparison.png)
 

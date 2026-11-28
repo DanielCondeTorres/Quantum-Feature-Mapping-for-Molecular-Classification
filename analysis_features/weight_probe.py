@@ -2,10 +2,11 @@
 
     python -m analysis_features weight-probe
 
-The weights in ``community_importance`` are expert priors, not fitted to the
-labels. This test asks how much the exact numbers matter: it evaluates the
-default weights, equal weights and 20 random weight vectors that also sum to
-one, on the same 1955 molecules, folds, circuit and SVM.
+The default is a neutral prior: all nine descriptors carry the same weight
+(1/9), because the literature supports the descriptor *set* but not a specific
+numerical ranking. This test checks whether that choice matters: it evaluates
+the equal default, a literature-ranked vector, and 20 random Dirichlet vectors
+that also sum to one, on the same 1955 molecules, folds, circuit and SVM.
 
 Outputs: ``results/weight_sensitivity.csv`` and ``.json``.
 """
@@ -25,6 +26,19 @@ from .random_qubit_test import scaffold_eval
 
 NAMES = tuple(_IMPORTANCE_WEIGHTS)
 
+# The old, literature-ranked vector is kept only as a robustness comparison.
+LITERATURE_PRIORS = {
+    "tpsa": 0.20,
+    "logp": 0.20,
+    "mr": 0.10,
+    "hbd": 0.15,
+    "hba": 0.10,
+    "gasteiger": 0.10,
+    "formal": 0.05,
+    "hetero": 0.05,
+    "aromatic": 0.05,
+}
+
 
 def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
     outdir = Path(outdir)
@@ -35,8 +49,8 @@ def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
     rng = np.random.default_rng(42)
 
     configurations: list[tuple[str, dict[str, float]]] = [
-        ("expert_priors", dict(_IMPORTANCE_WEIGHTS)),
-        ("equal_weights", {name: 1.0 / len(NAMES) for name in NAMES}),
+        ("equal_weights", dict(_IMPORTANCE_WEIGHTS)),
+        ("literature_priors", dict(LITERATURE_PRIORS)),
     ]
     for seed in range(20):
         values = rng.dirichlet(np.ones(len(NAMES)))
@@ -80,8 +94,10 @@ def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
             "fold_seed": 42,
             "note": "weights are fixed priors, never optimised on BBBP labels",
         },
-        "expert_priors": dict(_IMPORTANCE_WEIGHTS),
-        "equal_weights_auc": float(table.loc[1, "auc"]),
+        "equal_weights": dict(_IMPORTANCE_WEIGHTS),
+        "literature_priors": LITERATURE_PRIORS,
+        "equal_weights_auc": float(table.loc[0, "auc"]),
+        "literature_priors_auc": float(table.loc[1, "auc"]),
         "random_auc_mean": round(float(random_rows["auc"].mean()), 4),
         "random_auc_std": round(float(random_rows["auc"].std(ddof=1)), 4),
         "random_auc_min": float(random_rows["auc"].min()),
@@ -90,7 +106,7 @@ def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
     }
     (outdir / "weight_sensitivity.json").write_text(json.dumps(payload, indent=2))
     print(
-        f"\nexpert {table.loc[0, 'auc']:.4f} | equal {table.loc[1, 'auc']:.4f} | "
+        f"\nequal {table.loc[0, 'auc']:.4f} | literature {table.loc[1, 'auc']:.4f} | "
         f"random {payload['random_auc_mean']:.4f} ± {payload['random_auc_std']:.4f} "
         f"[{payload['random_auc_min']:.4f}, {payload['random_auc_max']:.4f}]"
     )
