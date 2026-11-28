@@ -13,6 +13,7 @@
     python -m analysis_features three-arms
     python -m analysis_features embedding-comparison
     python -m analysis_features diagram
+    python -m analysis_features circuit-diagram
     python -m analysis_features weight-probe
 """
 
@@ -181,6 +182,12 @@ def _diagram(args: argparse.Namespace) -> None:
     print(draw(args.outdir))
 
 
+def _circuit_diagram(args: argparse.Namespace) -> None:
+    from .circuit_diagram import draw
+
+    print(draw(args.outdir))
+
+
 def _weight_probe(args: argparse.Namespace) -> None:
     from .weight_probe import run
 
@@ -297,6 +304,12 @@ def build_parser() -> argparse.ArgumentParser:
     diagram = subparsers.add_parser("diagram", help="draw the graph-to-circuit figure")
     diagram.add_argument("--outdir", type=Path, default=Path("results"))
     diagram.set_defaults(func=_diagram)
+
+    circuit = subparsers.add_parser(
+        "circuit-diagram", help="draw the real 12-qubit circuit with Qiskit"
+    )
+    circuit.add_argument("--outdir", type=Path, default=Path("results"))
+    circuit.set_defaults(func=_circuit_diagram)
 
     weights = subparsers.add_parser(
         "weight-probe", help="sensitivity of the fixed importance weights"

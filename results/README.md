@@ -704,6 +704,7 @@ experiment: one new gate family, no extra qubits, and a clear ablation
 | `importance_test.csv`, `.json`, `.png` | RDKit BBBP importance and graph communities vs paper order |
 | `three_arms.csv`, `.json`, `confusion_matrices_three_arms.png` | Final focused comparison: paper, random and community importance |
 | `embedding_diagram.png` | Figure of the molecular graph and the 10+2 wiring used in the README |
+| `quantum_circuit_qiskit.png`, `quantum_circuit.json` | Real 12-qubit circuit drawn with Qiskit for aspirin, plus its exact gate manifest |
 | `weight_sensitivity.csv`, `.json` | Equal default vs literature-ranked and 20 random weight vectors |
 | `embedding_comparison.csv`, `.json`, `embedding_comparison.png` | Pauling electronegativity vs new importance features, 2x3 confusion matrices |
 
@@ -719,4 +720,5 @@ python -m analysis_features random-qubit-test
 python -m analysis_features importance-test
 python -m analysis_features three-arms
 python -m analysis_features embedding-comparison
+python -m analysis_features circuit-diagram
 ```
