@@ -70,6 +70,12 @@ python -m analysis_features four-features
 # Explain why PC1/PC2 collapses
 python -m analysis_features pca-diagnosis
 
+# Paper SMILES qubit order vs random backbone, full dataset
+python -m analysis_features random-qubit-test
+
+# RDKit BBBP importance + graph communities
+python -m analysis_features importance-test
+
 # Tests
 python -m pytest
 ```
@@ -95,6 +101,8 @@ analysis_features/
   property_probe.py # random q0 vs per-atom RDKit property selectors + PCA
   four_features.py # source / random q0 / PC1-PC2 / TPSA + 4 confusion matrices
   pca_diagnosis.py # why two PCA components collapse the 78 moments
+  random_qubit_test.py # paper SMILES order vs 20 random backbones, accuracy test
+  importance_test.py # RDKit BBBP importance + graph communities vs paper order
   verify.py        # independent check of every cleaning requirement
   io.py            # read raw tables, write the six deliverable files
   cli.py           # clean / embed / summary / benchmark / compare / property-probe / verify
@@ -126,6 +134,8 @@ results/
   four_features_benchmark.csv / .json
   confusion_matrices_four_features.png
   pca_diagnosis.csv / .json / .png
+  random_qubit_test.csv / .json / .png
+  importance_test.csv / .json / .png
 ```
 
 ---
@@ -556,6 +566,43 @@ moléculas permeables y dos features débiles, el SVM sin `class_weight` deja
 todos losScores por encima de cero y predice todo como permeable; con
 `class_weight="balanced"` esos mismos 2 PC dan 0.654 y BalAcc 0.609. Detalles y
 figura en `results/pca_diagnosis.png` (`python -m analysis_features pca-diagnosis`).
+
+### Test del paper: orden SMILES vs qubits aleatorios (dataset completo)
+
+`python -m analysis_features random-qubit-test` reproduce la regla literal del
+paper (*“atoms are indexed in RDKit SMILES-parse order; a₀–a₉ → q₀–q₉”*) sobre
+las 1955 moléculas limpias y la sustituye por 20 selecciones aleatorias del
+backbone, manteniendo el circuito, la cola, los ángulos y el SVM:
+
+| Protocolo | q0–q9 | Accuracy | BalAcc | AUC |
+|---|---|---:|---:|---:|
+| 5 folds scaffold | paper (orden SMILES) | **0.8501** | 0.776 | 0.8559 |
+| 5 folds scaffold | aleatorio (20 seeds) | 0.7587 ± 0.018 | 0.612 | 0.689 |
+| 10 splits estratificados | paper | **0.8558 ± 0.017** | 0.783 | 0.873 |
+| 10 splits estratificados | aleatorio | 0.7747 ± 0.018 | — | — |
+
+La media aleatoria (0.7587) está incluso **por debajo del baseline trivial**
+de predecir siempre “permeable” (0.7642): elegir los qubits al azar da un
+modelo peor que no mirar la molécula. Ninguna de las 20 semillas alcanza el
+0.850 del paper (la mejor da 0.804). Figura: `results/random_qubit_accuracy.png`.
+
+### Selección por importancia química + comunidades
+
+`python -m analysis_features importance-test` sustituye el backbone aleatorio
+por una selección basada en contribuciones atómicas de RDKit (TPSA, Crippen
+logP/MR, HBD/HBA, Gasteiger, carga formal, elemento e hibridación) con pesos
+fijos, y por una variante que usa comunidades de networkx sobre el grafo:
+
+| Regla | Accuracy | BalAcc | AUC |
+|---|---:|---:|---:|
+| Paper (orden SMILES) | 0.8501 | 0.776 | 0.8559 |
+| Aleatorio (20 seeds) | 0.7587 | 0.612 | 0.6886 |
+| Importancia RDKit | 0.8061 | 0.704 | 0.7777 |
+| Importancia + comunidades | 0.8036 | 0.704 | 0.7679 |
+
+La importancia química sí supera claramente al azar y al baseline trivial,
+pero no alcanza al orden SMILES del paper (que es fuga). Las comunidades no
+mejoran: 0.804 frente a 0.806. Figura: `results/importance_test.png`.
 
 ---
 

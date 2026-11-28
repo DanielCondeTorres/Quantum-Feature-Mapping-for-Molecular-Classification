@@ -28,6 +28,13 @@ the ordering choice explicit and reproducible:
 ``property_charge`` / ``property_role`` / ``property_mixed``
     Rank heavy atoms by an RDKit per-atom property and take the ten highest.
     These are structure-based selectors, not string-order selectors.
+``importance``
+    Fixed BBBP-relevant importance score combining RDKit per-atom TPSA,
+    Crippen logP/MR, HBD/HBA, Gasteiger/formal charge, element identity and
+    hybridisation. No label information is used.
+``community_importance``
+    Same score, but divided into graph communities: the best atom of each
+    community is selected before filling the remaining qubits.
 
 No strategy looks at the label.
 """
@@ -41,8 +48,9 @@ from math import sqrt
 from typing import Mapping
 
 import numpy as np
+import networkx as nx
 from rdkit import Chem, RDConfig
-from rdkit.Chem import ChemicalFeatures, rdMolDescriptors
+from rdkit.Chem import AllChem, ChemicalFeatures, rdMolDescriptors
 
 from .config import N_BACKBONE
 from .elements import electronegativity
@@ -401,3 +409,135 @@ def property_backbone(
         heavy_indices(mol), key=lambda idx: (-scores[idx], idx)
     )
     return tuple(ordered[:n_backbone])
+
+
+# --- BBBP-relevant importance + graph communities --------------------------
+_IMPORTANCE_WEIGHTS = {
+    "tpsa": 0.20,
+    "logp": 0.20,
+    "mr": 0.10,
+    "hbd": 0.15,
+    "hba": 0.10,
+    "gasteiger": 0.10,
+    "formal": 0.05,
+    "hetero": 0.05,
+    "aromatic": 0.05,
+}
+
+
+def _gasteiger_abs(mol: Chem.Mol) -> list[float]:
+    try:
+        AllChem.ComputeGasteigerCharges(mol)
+        return [
+            abs(float(atom.GetDoubleProp("_GasteigerCharge")))
+            for atom in mol.GetAtoms()
+        ]
+    except Exception:
+        return [0.0] * mol.GetNumAtoms()
+
+
+def per_atom_bbbp_properties(mol: Chem.Mol) -> dict[int, dict[str, float]]:
+    """Fixed RDKit per-atom descriptors relevant to passive permeability.
+
+    Nothing here is fitted to BBBP labels: these are the toolkit's own
+    atomic contributions, HBD/HBA SMARTS roles and partial charges.
+    """
+    heavy = heavy_indices(mol)
+    tpsa = per_atom_tpsa(mol)
+    try:
+        crippen = rdMolDescriptors._CalcCrippenContribs(mol)
+    except (AttributeError, RuntimeError, ValueError):
+        crippen = ()
+    charges = _gasteiger_abs(mol)
+    roles = atom_role_tokens(mol)
+
+    properties: dict[int, dict[str, float]] = {}
+    for idx in heavy:
+        atom = mol.GetAtomWithIdx(idx)
+        logp, mr = 0.0, 0.0
+        if idx < len(crippen):
+            logp, mr = float(crippen[idx][0]), float(crippen[idx][1])
+        tokens = roles.get(idx, ())
+        properties[idx] = {
+            "tpsa": tpsa.get(idx, 0.0),
+            "logp": logp,
+            "mr": mr,
+            "hbd": float("role:donor" in tokens),
+            "hba": float("role:acceptor" in tokens),
+            "gasteiger": charges[idx] if idx < len(charges) else 0.0,
+            "formal": abs(float(atom.GetFormalCharge())),
+            "hetero": float(atom.GetAtomicNum() != 6),
+            "aromatic": float(atom.GetIsAromatic()),
+        }
+    return properties
+
+
+def importance_scores(mol: Chem.Mol) -> dict[int, float]:
+    """Combined, per-molecule-normalised BBBP atom importance.
+
+    Continuous descriptors use their absolute deviation from the molecular
+    mean, so chemically unusual atoms (very polar or very lipophilic) score
+    highest. The weights are fixed a priori and sum to one.
+    """
+    properties = per_atom_bbbp_properties(mol)
+    heavy = list(properties)
+    scores = {idx: 0.0 for idx in heavy}
+    for name, weight in _IMPORTANCE_WEIGHTS.items():
+        values = np.asarray([properties[idx][name] for idx in heavy], dtype=float)
+        if name in {"tpsa", "logp", "mr", "gasteiger"} and values.size > 1:
+            values = np.abs(values - values.mean())
+        scale = float(values.max()) if values.size else 0.0
+        if scale <= 0:
+            continue
+        for idx, value in zip(heavy, values / scale):
+            scores[idx] += weight * float(value)
+    return scores
+
+
+def importance_backbone(
+    mol: Chem.Mol, n_backbone: int = N_BACKBONE
+) -> tuple[int, ...]:
+    """Ten highest-importance heavy atoms, q0 = most important."""
+    scores = importance_scores(mol)
+    ordered = sorted(scores, key=lambda idx: (-scores[idx], idx))
+    return tuple(ordered[:n_backbone])
+
+
+def community_importance_backbone(
+    mol: Chem.Mol, n_backbone: int = N_BACKBONE
+) -> tuple[int, ...]:
+    """Best atom of each graph community, then remaining high scorers.
+
+    Communities come from modularity optimisation on the heavy-atom graph.
+    This is the network-based alternative to a pure per-atom ranking: it
+    forces the backbone to represent different parts of the molecule.
+    """
+    heavy = heavy_indices(mol)
+    if not heavy:
+        return ()
+    scores = importance_scores(mol)
+    graph = nx.Graph()
+    graph.add_nodes_from(heavy)
+    for bond in mol.GetBonds():
+        left, right = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        if left in graph and right in graph:
+            graph.add_edge(left, right)
+    try:
+        communities = list(nx.community.greedy_modularity_communities(graph))
+    except (ValueError, nx.NetworkXError):
+        communities = [frozenset(heavy)]
+
+    representatives = [
+        max(community, key=lambda idx: (scores[idx], -idx))
+        for community in communities
+    ]
+    representatives.sort(key=lambda idx: (-scores[idx], idx))
+    selected = list(representatives[:n_backbone])
+    seen = set(selected)
+    if len(selected) < n_backbone:
+        remaining = sorted(
+            (idx for idx in heavy if idx not in seen),
+            key=lambda idx: (-scores[idx], idx),
+        )
+        selected.extend(remaining[: n_backbone - len(selected)])
+    return tuple(selected)

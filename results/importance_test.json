@@ -1,0 +1,58 @@
+{
+  "config": {
+    "n_molecules": 1955,
+    "folds": 5,
+    "fold_seed": 42,
+    "tail_mode": "paper",
+    "classifier": "RBF SVC C=10",
+    "importance_weights": {
+      "tpsa": 0.2,
+      "logp": 0.2,
+      "mr": 0.1,
+      "hbd": 0.15,
+      "hba": 0.1,
+      "gasteiger": 0.1,
+      "formal": 0.05,
+      "hetero": 0.05,
+      "aromatic": 0.05
+    }
+  },
+  "arms": [
+    {
+      "arm": "paper_smiles_order",
+      "seed": null,
+      "accuracy": 0.8501,
+      "balanced_accuracy": 0.776,
+      "auc": 0.8559,
+      "shuffle_accuracy_mean": null,
+      "f1": null
+    },
+    {
+      "arm": "random_backbone",
+      "seed": null,
+      "accuracy": 0.7587,
+      "balanced_accuracy": 0.6116,
+      "auc": 0.6886,
+      "shuffle_accuracy_mean": null,
+      "f1": null
+    },
+    {
+      "arm": "importance",
+      "seed": null,
+      "accuracy": 0.8061,
+      "balanced_accuracy": 0.7037,
+      "auc": 0.7777,
+      "shuffle_accuracy_mean": 0.8261,
+      "f1": 0.8762
+    },
+    {
+      "arm": "community_importance",
+      "seed": null,
+      "accuracy": 0.8036,
+      "balanced_accuracy": 0.7035,
+      "auc": 0.7679,
+      "shuffle_accuracy_mean": 0.8192,
+      "f1": 0.8742
+    }
+  ]
+}

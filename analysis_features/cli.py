@@ -8,6 +8,8 @@
     python -m analysis_features property-probe
     python -m analysis_features four-features
     python -m analysis_features pca-diagnosis
+    python -m analysis_features random-qubit-test
+    python -m analysis_features importance-test
 """
 
 from __future__ import annotations
@@ -129,10 +131,26 @@ def _compare(args: argparse.Namespace) -> None:
     print(f"\nSaved comparison artifacts to: {args.outdir}")
 
 
+def _random_qubit_test(args: argparse.Namespace) -> None:
+    from .random_qubit_test import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
 def _pca_diagnosis(args: argparse.Namespace) -> None:
     from .pca_diagnosis import diagnose
 
     table = diagnose(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
+def _importance_test(args: argparse.Namespace) -> None:
+    from .importance_test import run
+
+    table = run(outdir=args.outdir)
     print()
     print(table.to_string(index=False))
 
@@ -214,6 +232,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diagnosis.add_argument("--outdir", type=Path, default=Path("results"))
     diagnosis.set_defaults(func=_pca_diagnosis)
+
+    random_qubit = subparsers.add_parser(
+        "random-qubit-test",
+        help="paper SMILES qubit order vs random backbone on the full dataset",
+    )
+    random_qubit.add_argument("--outdir", type=Path, default=Path("results"))
+    random_qubit.set_defaults(func=_random_qubit_test)
+
+    importance = subparsers.add_parser(
+        "importance-test",
+        help="RDKit BBBP atom importance and graph communities vs paper order",
+    )
+    importance.add_argument("--outdir", type=Path, default=Path("results"))
+    importance.set_defaults(func=_importance_test)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

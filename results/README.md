@@ -318,6 +318,74 @@ set and lose backbone connectivity. So "the order is better" only holds for the
 leaky source order; among honest structure-based arms, keeping the topology
 matters more than which per-atom property is used.
 
+## Paper qubit order vs random backbone (full dataset)
+
+The paper states: *"Atoms are indexed in RDKit SMILES-parse order. Backbone
+atoms a₀–a₉ map one-to-one onto q₀–q₉"*. `python -m analysis_features
+random-qubit-test` reproduces that rule on all **1955 cleaned molecules** and
+replaces only that rule with a random ten-atom backbone, over 20 seeds. The
+published tail, Pauling angles, RBF SVM and folds are otherwise identical.
+
+Two protocols are reported: five scaffold-disjoint folds and the paper's
+ten stratified shuffle splits. Plain accuracy has a trivial baseline of
+**0.7642** ("always permeable") on this imbalanced table.
+
+| Protocol | Regla de q0–q9 | Accuracy | Bal. acc. | AUC |
+|---|---|---:|---:|---:|
+| 5 folds por scaffold | paper: primeros 10 átomos en orden SMILES | **0.8501** | 0.776 | 0.8559 |
+| 5 folds por scaffold | aleatoria, media de 20 seeds | 0.7587 ± 0.0180 | 0.6116 | 0.6886 |
+| 10 splits estratificados | paper | **0.8558 ± 0.0171** | 0.7827 | 0.8727 |
+| 10 splits estratificados | aleatoria, media de 20 seeds | 0.7747 ± 0.0182 | — | — |
+
+La accuracy aleatoria va de 0.7361 a 0.8036 en los 20 seeds; el mejor
+(seed 13, accuracy 0.8036, AUC 0.7969) sigue por debajo del paper. Con la
+regla del paper no hay ninguna semilla que la iguale.
+
+**El resultado incómodo:** la media aleatoria (0.7587) está incluso ligeramente
+**por debajo del baseline trivial** de predecir siempre “permeable” (0.7642).
+Es decir: elegir los 10 qubits al azar produce un clasificador peor que no
+mirar la molécula. La selección del paper, en cambio, da 0.850 de accuracy.
+Esto confirma que el orden de átomos del SMILES contiene una señal muy fuerte
+para esta tarea — pero, como mostramos arriba, es señal de **procedencia del
+archivo**, no de química: al canonizar el mismo conjunto cae y al destruir la
+secuencia (`source_permuted`, 0.7587) se comporta exactamente como una
+selección aleatoria.
+
+`random_qubit_accuracy.png` muestra el histograma de accuracies de los 20
+seeds frente a la barra del paper y la línea del baseline trivial, la relación
+accuracy/balanced accuracy y una matriz de confusión de ejemplo (seed 0:
+TN 131, FP 330, FN 177, TP 1317).
+
+## BBBP atom importance and graph communities
+
+`python -m analysis_features importance-test` replaces the random backbone
+with a chemically motivated one. A fixed score combines RDKit per-atom TPSA
+contribution, Crippen logP/MR contributions, HBD/HBA SMARTS roles, Gasteiger and
+formal charges, element identity and aromaticity. Continuous descriptors use
+their absolute deviation from the molecular mean and the weights (0.20 TPSA,
+0.20 logP, 0.10 MR, 0.15 HBD, 0.10 HBA, 0.10 charge, 0.05 each for formal,
+hetero and aromatic) are fixed a priori, never fitted to labels. The
+`community_importance` arm first splits the heavy-atom graph into communities
+by modularity optimisation and selects the best atom of each community.
+
+| Regla de q0–q9 | Accuracy | Bal. acc. | AUC | Accuracy (10 splits) |
+|---|---:|---:|---:|---:|
+| Paper: orden SMILES | **0.8501** | 0.776 | 0.8559 | — |
+| Aleatorio (media 20 seeds) | 0.7587 | 0.612 | 0.6886 | — |
+| `importance` (RDKit) | 0.8061 | 0.704 | 0.7777 | 0.8261 |
+| `community_importance` (networkx) | 0.8036 | 0.704 | 0.7679 | 0.8192 |
+
+Matrices de confusión: `importance` TN 235 / FP 226 / FN 153 / TP 1341;
+`community_importance` TN 237 / FP 224 / FN 160 / TP 1334.
+
+**Conclusión:** la selección por importancia química sí funciona — mejora la
+accuracy de 0.759 a 0.806 y el AUC de 0.689 a 0.778 respecto a elegir átomos al
+azar, y supera el baseline trivial de 0.764. Pero sigue por debajo del orden
+SMILES del paper (0.850), que como ya vimos contiene fuga de procedencia. Las
+comunidades no aportan: 0.804 frente a 0.806 del ranking directo, probablemente
+porque obligan a representar regiones que no son las más informativas. La
+figura `importance_test.png` compara los cuatro brazos.
+
 ## Files
 
 | File | Content |
@@ -338,6 +406,8 @@ matters more than which per-atom property is used.
 | `four_features_benchmark.csv`, `.json` | The four requested arms: source, random q0, PC1/PC2 and TPSA |
 | `confusion_matrices_four_features.png` | The four out-of-fold confusion matrices (2x2) |
 | `pca_diagnosis.csv`, `.json`, `.png` | Rotation vs truncation, PC correlations, imbalance and score distributions |
+| `random_qubit_test.csv`, `.json`, `.png` | Paper SMILES order vs 20 random backbones, accuracy distributions |
+| `importance_test.csv`, `.json`, `.png` | RDKit BBBP importance and graph communities vs paper order |
 
 Reproduce with:
 
@@ -347,4 +417,6 @@ python -m analysis_features compare
 python -m analysis_features property-probe
 python -m analysis_features four-features
 python -m analysis_features pca-diagnosis
+python -m analysis_features random-qubit-test
+python -m analysis_features importance-test
 ```

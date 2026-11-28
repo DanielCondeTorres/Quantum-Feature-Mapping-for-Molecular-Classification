@@ -171,3 +171,23 @@ def test_random_source_order_is_seed_dependent() -> None:
     first = embed(smiles, order="source_random", strip_salts=False, random_seed=0)
     other = embed(smiles, order="source_random", strip_salts=False, random_seed=1)
     assert first.backbone_atoms != other.backbone_atoms
+
+
+def test_importance_and_community_selectors_are_deterministic() -> None:
+    from rdkit import Chem
+
+    from analysis_features.atom_order import (
+        community_importance_backbone,
+        importance_backbone,
+    )
+
+    smiles = "CC(=O)Nc1ccc(O)cc1"
+    mol = Chem.MolFromSmiles(smiles)
+    for order in ("importance", "community_importance"):
+        first = embed(smiles, order=order)
+        again = embed(smiles, order=order)
+        assert np.allclose(first.features, again.features)
+        assert first.features.size == 78
+        assert first.qubits[0].element == "O"
+    assert len(importance_backbone(mol)) == 10
+    assert len(community_importance_backbone(mol)) == 10

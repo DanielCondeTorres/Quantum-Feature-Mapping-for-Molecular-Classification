@@ -25,6 +25,8 @@ from rdkit.Chem import ChemicalFeatures, rdMolDescriptors
 
 from .atom_order import (
     chemical_coverage_backbone,
+    community_importance_backbone,
+    importance_backbone,
     permuted_backbone,
     property_backbone,
     PROPERTY_SELECTORS,
@@ -361,6 +363,8 @@ ORDER_CHOICES = (
     "source_permuted",
     "canonical_permuted",
     *tuple(f"property_{name}" for name in PROPERTY_SELECTORS),
+    "importance",
+    "community_importance",
 )
 _GRAPH_ORDERS = {
     "chemical",
@@ -369,6 +373,8 @@ _GRAPH_ORDERS = {
     "canonical_shuffled",
     "canonical_permuted",
     *tuple(f"property_{name}" for name in PROPERTY_SELECTORS),
+    "importance",
+    "community_importance",
 }
 
 
@@ -403,6 +409,9 @@ def embed(
         atoms (destroys the traversal).
         ``"property_<name>"``: top ten atoms by an RDKit per-atom property
         (tpsa, pauling, hetero, charge, role or mixed). Structure-based.
+        ``"importance"``: top ten by a fixed BBBP-relevant RDKit score.
+        ``"community_importance"``: best atom per graph community, then top
+        scorers; the network-based selector.
     property:
         ``"pauling"`` (paper) or ``"tpsa"`` (optional ablation).
     tail_mode:
@@ -442,6 +451,10 @@ def embed(
         backbone = permuted_backbone(parent, random_seed)
     elif order.startswith("property_"):
         backbone = property_backbone(parent, order.removeprefix("property_"))
+    elif order == "importance":
+        backbone = importance_backbone(parent)
+    elif order == "community_importance":
+        backbone = community_importance_backbone(parent)
 
     state, qubits, tail_angles, bond_gates = build_statevector(
         parent,
