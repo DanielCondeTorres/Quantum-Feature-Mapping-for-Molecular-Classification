@@ -57,6 +57,7 @@ import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
+    confusion_matrix,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedGroupKFold
@@ -126,9 +127,6 @@ class OutOfFold:
 
     @property
     def matrix(self) -> np.ndarray:
-        # TN, FP, FN, TP via sklearn's [0,1] label order.
-        from sklearn.metrics import confusion_matrix
-
         return confusion_matrix(self.y, self.predictions, labels=[0, 1])
 
 
