@@ -54,3 +54,13 @@ def test_embed_command_prints_a_qubit_table(capsys) -> None:
     assert "Salt stripped: True" in output
     assert "q0" in output
     assert "Bond gates applied" in output
+
+
+def test_compare_command_help(capsys) -> None:
+    try:
+        main(["compare", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    output = capsys.readouterr().out
+    assert "compare main branch baseline" in output
+

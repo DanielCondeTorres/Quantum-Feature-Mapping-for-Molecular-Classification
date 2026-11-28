@@ -20,6 +20,10 @@ the ordering choice explicit and reproducible:
     original string's traversal, including any counter-ions).
 ``canonical_shuffled``
     The first ten canonical atoms in a random qubit order.
+``source_permuted``
+    A random subset of the source parent's heavy atoms (destroys the traversal).
+``canonical_permuted``
+    A random subset of the canonical parent's heavy atoms (destroys the traversal).
 
 No strategy looks at the label.
 """
@@ -292,3 +296,18 @@ def shuffled_backbone(
     rng = np.random.default_rng(seed)
     rng.shuffle(backbone)
     return tuple(backbone)
+
+
+def permuted_backbone(
+    mol: Chem.Mol, seed: int, n_backbone: int = N_BACKBONE
+) -> tuple[int, ...]:
+    """A random subset of heavy atoms, ignoring the molecule's traversal.
+
+    This is the control for "any ten atoms" versus "ten atoms in a meaningful
+    order". It keeps the molecule fixed and destroys both the source and the
+    canonical traversal.
+    """
+    heavy = heavy_indices(mol)
+    rng = np.random.default_rng(seed)
+    order = [int(idx) for idx in rng.permutation(heavy)]
+    return tuple(order[:n_backbone])

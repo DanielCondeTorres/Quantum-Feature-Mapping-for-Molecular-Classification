@@ -98,6 +98,15 @@ def _benchmark(args: argparse.Namespace) -> None:
     print(f"\nSaved: {args.outdir}")
 
 
+def _compare(args: argparse.Namespace) -> None:
+    from .compare import run_comparison
+
+    table = run_comparison(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+    print(f"\nSaved comparison artifacts to: {args.outdir}")
+
+
 def _verify(args: argparse.Namespace) -> None:
     from .verify import main as verify_main
 
@@ -147,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     benchmark.add_argument("--outdir", type=Path, default=Path("results"))
     benchmark.set_defaults(func=_benchmark)
+
+    compare = subparsers.add_parser(
+        "compare",
+        help="compare main branch baseline (250 subset, raw source) with cleaned dataset",
+        description="compare main branch baseline (250 subset, raw source) with cleaned dataset",
+    )
+    compare.add_argument("--outdir", type=Path, default=Path("results"))
+    compare.set_defaults(func=_compare)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

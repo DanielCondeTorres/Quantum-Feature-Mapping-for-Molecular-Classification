@@ -164,6 +164,204 @@
       "mean_backbone_size": null
     },
     {
+      "name": "source_random_stripped_seed0",
+      "order": "source_random",
+      "strip_salts": true,
+      "random_seed": 0,
+      "auc": 0.8340426057084448,
+      "auc_ci_low": 0.8103597305237781,
+      "auc_ci_high": 0.8563392477176228,
+      "balanced_accuracy": 0.7479273565701707,
+      "f1": 0.8975864318330071,
+      "fold_aucs": [
+        0.899372176260048,
+        0.9227390180878553,
+        0.8310560444650302,
+        0.7908946284858693,
+        0.821422383922384
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "source_random_stripped_seed1",
+      "order": "source_random",
+      "strip_salts": true,
+      "random_seed": 1,
+      "auc": 0.8013144406984409,
+      "auc_ci_low": 0.7776886072001361,
+      "auc_ci_high": 0.8252350833500021,
+      "balanced_accuracy": 0.714546544819916,
+      "f1": 0.886223662884927,
+      "fold_aucs": [
+        0.8394062078272605,
+        0.8303875968992247,
+        0.810084401214554,
+        0.7808581321355044,
+        0.8051368676368675
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "source_random_stripped_seed2",
+      "order": "source_random",
+      "strip_salts": true,
+      "random_seed": 2,
+      "auc": 0.8381457863267968,
+      "auc_ci_low": 0.8157659418280518,
+      "auc_ci_high": 0.8610531124002184,
+      "balanced_accuracy": 0.7496812993114903,
+      "f1": 0.8985979784806,
+      "fold_aucs": [
+        0.9110485243208356,
+        0.9151937984496125,
+        0.846366630641758,
+        0.7843907916900617,
+        0.8344594594594595
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "source_permuted_seed0",
+      "order": "source_permuted",
+      "strip_salts": true,
+      "random_seed": 0,
+      "auc": 0.7647807426379415,
+      "auc_ci_low": 0.7372601600194484,
+      "auc_ci_high": 0.7910360004093926,
+      "balanced_accuracy": 0.6716460926860007,
+      "f1": 0.8700419219606579,
+      "fold_aucs": [
+        0.7931702165111777,
+        0.7791214470284237,
+        0.7716406772682827,
+        0.7604342129889576,
+        0.7443260568260569
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "source_permuted_seed1",
+      "order": "source_permuted",
+      "strip_salts": true,
+      "random_seed": 1,
+      "auc": 0.7486845429440103,
+      "auc_ci_low": 0.722802239762305,
+      "auc_ci_high": 0.7733920000951353,
+      "balanced_accuracy": 0.6536231694674577,
+      "f1": 0.8648475120385233,
+      "fold_aucs": [
+        0.7858358270257584,
+        0.804031007751938,
+        0.7377257989810098,
+        0.7313307130825379,
+        0.7467082467082468
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "source_permuted_seed2",
+      "order": "source_permuted",
+      "strip_salts": true,
+      "random_seed": 2,
+      "auc": 0.7626086413622676,
+      "auc_ci_low": 0.7363262053724237,
+      "auc_ci_high": 0.7896482377758819,
+      "balanced_accuracy": 0.6920923026887013,
+      "f1": 0.8770226537216829,
+      "fold_aucs": [
+        0.8426920143167282,
+        0.785374677002584,
+        0.7832973084246821,
+        0.731447688564477,
+        0.7328049203049204
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "canonical_permuted_seed0",
+      "order": "canonical_permuted",
+      "strip_salts": true,
+      "random_seed": 0,
+      "auc": 0.7600241893096609,
+      "auc_ci_low": 0.7340010966892423,
+      "auc_ci_high": 0.7863341397947993,
+      "balanced_accuracy": 0.6702268219661001,
+      "f1": 0.8693969687197678,
+      "fold_aucs": [
+        0.8196033562166286,
+        0.7873901808785531,
+        0.789627399516237,
+        0.7254000561482312,
+        0.7367030492030493
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "canonical_permuted_seed1",
+      "order": "canonical_permuted",
+      "strip_salts": true,
+      "random_seed": 1,
+      "auc": 0.7472166322557039,
+      "auc_ci_low": 0.7224475433004506,
+      "auc_ci_high": 0.7727071248434688,
+      "balanced_accuracy": 0.6770690861784086,
+      "f1": 0.8714470284237726,
+      "fold_aucs": [
+        0.8021181716833891,
+        0.7793798449612402,
+        0.7276645566363029,
+        0.7360214299082911,
+        0.7351871101871101
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
+      "name": "canonical_permuted_seed2",
+      "order": "canonical_permuted",
+      "strip_salts": true,
+      "random_seed": 2,
+      "auc": 0.7529619562850098,
+      "auc_ci_low": 0.7275559436916837,
+      "auc_ci_high": 0.7799411581082746,
+      "balanced_accuracy": 0.6649090940769586,
+      "f1": 0.8743622448979592,
+      "fold_aucs": [
+        0.8055213284046235,
+        0.7795348837209303,
+        0.7593664762492924,
+        0.7289327157027887,
+        0.7181219681219682
+      ],
+      "mean_gates": null,
+      "mean_backbone_edges": null,
+      "mean_heteroatoms": null,
+      "mean_backbone_size": null
+    },
+    {
       "name": "random_seed0",
       "order": "random",
       "strip_salts": true,
@@ -328,6 +526,35 @@
       "auc_ci_high": 0.7501,
       "balanced_accuracy": 0.6347,
       "f1": 0.8832
+    }
+  ],
+  "salt_diagnostics": [
+    {
+      "seed": 0,
+      "n_molecules": 1955,
+      "n_multifragment": 98,
+      "backbones_with_counterion": 98,
+      "fraction_with_counterion": 0.0501,
+      "label_rate_with_counterion": 0.6122,
+      "label_rate_without_counterion": 0.7722
+    },
+    {
+      "seed": 1,
+      "n_molecules": 1955,
+      "n_multifragment": 98,
+      "backbones_with_counterion": 20,
+      "fraction_with_counterion": 0.0102,
+      "label_rate_with_counterion": 0.75,
+      "label_rate_without_counterion": 0.7643
+    },
+    {
+      "seed": 2,
+      "n_molecules": 1955,
+      "n_multifragment": 98,
+      "backbones_with_counterion": 98,
+      "fraction_with_counterion": 0.0501,
+      "label_rate_with_counterion": 0.6122,
+      "label_rate_without_counterion": 0.7722
     }
   ]
 }

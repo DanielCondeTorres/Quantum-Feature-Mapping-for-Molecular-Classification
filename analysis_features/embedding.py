@@ -25,6 +25,7 @@ from rdkit.Chem import ChemicalFeatures, rdMolDescriptors
 
 from .atom_order import (
     chemical_coverage_backbone,
+    permuted_backbone,
     random_start_backbone,
     shuffled_backbone,
 )
@@ -355,12 +356,15 @@ ORDER_CHOICES = (
     "random",
     "source_random",
     "canonical_shuffled",
+    "source_permuted",
+    "canonical_permuted",
 )
 _GRAPH_ORDERS = {
     "chemical",
     "chemical_canonical_order",
     "random",
     "canonical_shuffled",
+    "canonical_permuted",
 }
 
 
@@ -389,6 +393,10 @@ def embed(
         ``"source_random"``: source-string order rotated to a random starting
         atom (keeps counter-ions; the published baseline with a random q0).
         ``"canonical_shuffled"``: first ten canonical atoms in random order.
+        ``"source_permuted"``: random subset of the source parent's heavy atoms
+        (destroys the traversal).
+        ``"canonical_permuted"``: random subset of the canonical parent's heavy
+        atoms (destroys the traversal).
     property:
         ``"pauling"`` (paper) or ``"tpsa"`` (optional ablation).
     tail_mode:
@@ -424,6 +432,8 @@ def embed(
         backbone = random_start_backbone(parent, random_seed)
     elif order == "canonical_shuffled":
         backbone = shuffled_backbone(parent, random_seed)
+    elif order in {"source_permuted", "canonical_permuted"}:
+        backbone = permuted_backbone(parent, random_seed)
 
     state, qubits, tail_angles, bond_gates = build_statevector(
         parent,

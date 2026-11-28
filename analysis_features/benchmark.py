@@ -84,6 +84,23 @@ ARMS: tuple[Arm, ...] = (
         for seed in (0, 1, 2)
     ),
     *(
+        Arm(
+            f"source_random_stripped_seed{seed}",
+            "source_random",
+            strip_salts=True,
+            random_seed=seed,
+        )
+        for seed in (0, 1, 2)
+    ),
+    *(
+        Arm(f"source_permuted_seed{seed}", "source_permuted", random_seed=seed)
+        for seed in (0, 1, 2)
+    ),
+    *(
+        Arm(f"canonical_permuted_seed{seed}", "canonical_permuted", random_seed=seed)
+        for seed in (0, 1, 2)
+    ),
+    *(
         Arm(f"random_seed{seed}", "random", random_seed=seed)
         for seed in (0, 1, 2)
     ),
@@ -157,7 +174,14 @@ def make_folds(y: np.ndarray, groups: np.ndarray) -> list[tuple[np.ndarray, np.n
 def build_features(frame: pd.DataFrame, arm: Arm) -> np.ndarray:
     rows = []
     for source_smiles, canonical_smiles in zip(frame["source_smiles"], frame["canonical_smiles"]):
-        smiles = source_smiles if not arm.strip_salts else canonical_smiles
+        # ``source`` and ``source_random`` must keep the string as written; the
+        # salt decision is applied inside ``embed`` so the parent fragment keeps
+        # its source traversal. Other orders start from canonical SMILES.
+        smiles = (
+            source_smiles
+            if arm.order in {"source", "source_random", "source_permuted"}
+            else canonical_smiles
+        )
         result = embed(
             smiles,
             order=arm.order,
@@ -429,6 +453,58 @@ def _rounded(value: float | None, digits: int = 4) -> float | None:
     return None if value is None else round(value, digits)
 
 
+def salt_diagnostics(frame: pd.DataFrame, outdir: Path) -> pd.DataFrame:
+    """How often does a random source window include a counter-ion?
+
+    The published baseline keeps salts. ``source_random`` rotates the whole
+    source atom list, so a counter-ion can land on q0-q9. Salt form is metadata
+    (hydrochloride vs free base) and may correlate with the label, which would
+    make the arm leak provenance even after the start atom is randomised.
+    """
+    from .standardize import fragment_rank
+
+    y = frame["label"].to_numpy()
+    rows = []
+    for seed in (0, 1, 2):
+        counter = []
+        multifragment = 0
+        for source_smiles in frame["source_smiles"]:
+            mol = parse(source_smiles)
+            frag_indices = Chem.GetMolFrags(mol)
+            if len(frag_indices) == 1:
+                counter.append(False)
+                continue
+            multifragment += 1
+            fragments = Chem.GetMolFrags(mol, asMols=True)
+            ranks = [fragment_rank(fragment) for fragment in fragments]
+            winner = max(range(len(ranks)), key=lambda idx: ranks[idx])
+            non_parent = set(range(mol.GetNumAtoms())) - set(frag_indices[winner])
+            result = embed(
+                source_smiles,
+                order="source_random",
+                strip_salts=False,
+                random_seed=seed,
+            )
+            counter.append(bool(set(result.backbone_atoms) & non_parent))
+        counter = np.asarray(counter, dtype=bool)
+        rows.append(
+            {
+                "seed": seed,
+                "n_molecules": int(len(frame)),
+                "n_multifragment": multifragment,
+                "backbones_with_counterion": int(counter.sum()),
+                "fraction_with_counterion": round(float(counter.mean()), 4),
+                "label_rate_with_counterion": (
+                    round(float(y[counter].mean()), 4) if counter.any() else None
+                ),
+                "label_rate_without_counterion": round(float(y[~counter].mean()), 4),
+            }
+        )
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "salt_diagnostics.csv", index=False)
+    return table
+
+
 def run(outdir: Path = RESULTS_DIR, arms: Sequence[Arm] = ARMS) -> pd.DataFrame:
     """Run every arm on identical folds and write the deliverables."""
     outdir.mkdir(parents=True, exist_ok=True)
@@ -492,6 +568,10 @@ def run(outdir: Path = RESULTS_DIR, arms: Sequence[Arm] = ARMS) -> pd.DataFrame:
     print("[controls] composition baselines ...", flush=True)
     controls = composition_controls(frame, folds, outdir)
     payload["controls"] = json.loads(controls.to_json(orient="records"))
+
+    print("[controls] salt diagnostics ...", flush=True)
+    salt = salt_diagnostics(frame, outdir)
+    payload["salt_diagnostics"] = json.loads(salt.to_json(orient="records"))
     (outdir / "atom_order_benchmark.json").write_text(json.dumps(payload, indent=2))
     return table
 
