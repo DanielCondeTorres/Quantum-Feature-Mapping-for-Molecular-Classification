@@ -52,6 +52,12 @@ python -m analysis_features embed --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
 # Compact summary of the cleaned table
 python -m analysis_features summary
 
+# Check every requirement against the committed outputs
+python -m analysis_features verify
+
+# Reproduce the atom-order benchmark and the confusion matrix
+python -m analysis_features benchmark
+
 # Tests
 python -m pytest
 ```
@@ -70,10 +76,13 @@ analysis_features/
   elements.py      # original Hannan table, explicit extensions, coverage audit
   standardize.py   # parse, salt stripping, canonical SMILES, tautomer key
   cleaning.py      # the eight-stage pipeline (pure functions, counted stages)
-  io.py            # read raw tables, write the six deliverable files
+  atom_order.py    # canonical / source / chemical / random backbone selectors
   embedding.py     # exact 10+2 state vector + Pauli readout, no Qiskit
-  cli.py           # clean / embed / summary
-tests/             # 35 unit and integration tests
+  benchmark.py     # atom-order comparison on scaffold folds + confusion matrix
+  verify.py        # independent check of every cleaning requirement
+  io.py            # read raw tables, write the six deliverable files
+  cli.py           # clean / embed / summary / benchmark / verify
+tests/             # 42 unit, integration and verification tests
 data/
   raw/BBBP.csv                  # untouched DeepChem download (2050 rows)
   raw/BBBP_previous_250.csv     # previous balanced benchmark (125 + 125)
@@ -85,6 +94,12 @@ data/
     BBBP_clean_log.txt          # per-stage counts
     BBBP_clean_settings.json    # versions + decisions in machine-readable form
 docs/METHODS.md                 # copy-paste methods paragraph
+results/
+  atom_order_benchmark.csv      # AUC per ordering rule, same folds
+  atom_order_benchmark.json     # fold-by-fold scores and configuration
+  confusion_matrix.png          # out-of-fold matrices (source / canonical / chemical)
+  composition_controls.csv      # bag-of-elements controls
+  backbone_diagnostics.csv      # gates and connectivity per molecule
 ```
 
 ---
@@ -398,11 +413,53 @@ Measured on the same 1955 molecules with scaffold-disjoint outer folds
 The source-order arm is not reading chemistry; it is reading curation order.
 The drop from 0.889 to 0.810 when canonicalising is the leak disappearing.
 
-**Recommendation for the paper:** use a graph-derived selector
-(`CHEMICAL_COVERAGE` in `dct_rdkit`) for the main quantum arm, keep canonical
-order as a reproducibility control, and report source order only as the
-historical baseline with the leakage caveat. Do not tune on the source-order
-score.
+### Reproduced on this branch, with the order/set controls
+
+`python -m analysis_features benchmark` reruns the comparison on the 1955-row
+table with 1016 scaffold groups, five folds, fixed `C=10`, 78 Pauli moments and
+the `global` tail. The numbers are pooled out-of-fold AUC (the `dct_rdkit`
+table above reports the mean of fold AUCs, which is slightly higher).
+
+| Arm | What changes | AUC | 95% CI |
+|---|---|---:|---:|
+| `source` | source string, counter-ions kept | **0.8805** | 0.862–0.899 |
+| `canonical` | first ten canonical atoms | **0.8015** | 0.775–0.826 |
+| `chemical` | greedy Morgan/role coverage | **0.7664** | 0.742–0.794 |
+| `chemical_canonical_order` | chemical set, atom-index order | 0.7604 | 0.734–0.787 |
+| `source_random` (3 seeds) | source order, random start | 0.8200 ± 0.017 | — |
+| `random` (3 seeds) | canonical order, random start | 0.7992 ± 0.037 | — |
+| `canonical_shuffled` (3 seeds) | canonical set, random qubit order | 0.7989 ± 0.001 | — |
+
+Two controls settle the canonical-vs-chemical question:
+
+- `canonical_shuffled` keeps the canonical set and permutes the qubits: **0.7989**,
+  identical to `canonical`. The qubit assignment does not matter.
+- `chemical_canonical_order` keeps the chemical set and only changes the order:
+  **0.7604**, identical to `chemical`. Again, the order does not matter.
+
+So the gap is a property of the **selected atom set**, not of the numbering.
+The chemical selector maximises Morgan-environment and chemical-role coverage,
+which on BBBP yields a scattered, heteroatom-rich backbone: 3.27 heteroatoms
+versus 2.53, 7.76 backbone–backbone bonds versus 9.14, and 15.78 gates versus
+12.24 (the surplus are interface bonds duplicated onto q10 and q11). Its own
+bag-of-elements is less predictive too: 0.7195 versus 0.7417 for the canonical
+set, before any circuit is applied. A whole-molecule composition baseline
+reaches **0.8133**, statistically indistinguishable from the canonical circuit
+(0.8015, overlapping CIs). The map adds 0.05–0.06 over the composition of its
+own selected atoms, but it does not beat a simple whole-molecule composition
+model, and it is well below RDKit descriptors (0.870).
+
+Rotating the source string to a random start lowers it from 0.8805 to
+0.8200 ± 0.017, so part of the leak is the starting atom and part is the source
+traversal. Rotating the canonical order changes the ten-atom window and gives
+0.7992 ± 0.037: the window matters, the identity of q0 does not, and the seed
+spread (0.756–0.823) is larger than the canonical-vs-chemical gap.
+
+**Recommendation for the paper:** use a graph-derived selector for the main
+quantum arm (or canonical order as a reproducible control), report
+`canonical_shuffled` to show that the result is not a lucky numbering, report
+source order only as the historical baseline with the leakage caveat, and
+include the composition controls. Do not tune on the source-order score.
 
 ---
 
@@ -471,8 +528,18 @@ canonical` gives the reproducible version.
 
 ```bash
 python -m pytest
-# 35 passed
+# 42 passed
+
+python -m analysis_features verify
+# 34/34 checks passed
 ```
+
+`verify` re-reads the committed CSVs and checks each requirement independently:
+raw row count, invalid count, parsed balance, final size, label counts, no
+duplicates, no conflicting labels, required columns, the `atoms_beyond_10`
+formula, element coverage, audit reasons, previous-250 reproduction, the
+propranolol qubit-0 regression, the recorded RDKit version, the stage log,
+charge/stereo/tautomer flags and the untouched Hannan table.
 
 The suite covers salt stripping, canonical invariance, charge and stereo
 preservation, ambiguous fragments, tautomer grouping, the missing elements,
@@ -499,7 +566,10 @@ The output is deterministic given the raw file and the recorded RDKit version.
    molecules are affected.
 3. The circuit uses one scalar per atom and one per bond, which is poorer input
    than 13 whole-molecule RDKit descriptors. Classical descriptors lead on this
-   dataset; the quantum arm is not expected to beat them.
+   dataset; the quantum arm is not expected to beat them. A bag-of-elements +
+   size + charge baseline reaches 0.8133, statistically indistinguishable from
+   the canonical circuit (0.8015); the map adds 0.05–0.06 over the composition
+   of its own ten atoms, but nothing over whole-molecule composition.
 4. Any result that uses source atom order or `source_row` is contaminated by
    curation provenance. The modelling table removes both.
 5. "Quantum" here means a simulated feature map, not a quantum classifier and

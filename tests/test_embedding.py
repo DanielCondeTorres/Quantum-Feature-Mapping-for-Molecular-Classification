@@ -80,3 +80,58 @@ def test_tpsa_is_an_optional_property_that_changes_the_angles() -> None:
 def test_invalid_smiles_raise() -> None:
     with pytest.raises(ValueError):
         embed("not-a-smiles")
+
+
+def test_every_order_produces_the_same_feature_width() -> None:
+    smiles = "CC(C)NCC(O)COc1cccc2ccccc12"
+    for order in (
+        "canonical",
+        "source",
+        "chemical",
+        "chemical_canonical_order",
+        "random",
+        "source_random",
+        "canonical_shuffled",
+    ):
+        assert embed(smiles, order=order).features.size == 78
+
+
+def test_chemical_order_is_deterministic_and_starts_on_a_heteroatom() -> None:
+    first = embed("CCO", order="chemical")
+    second = embed("CCO", order="chemical")
+    assert np.allclose(first.features, second.features)
+    assert first.qubits[0].element == "O"
+
+
+def test_chemical_canonical_order_uses_the_same_atom_set_sorted() -> None:
+    chemical = embed("CC(=O)Oc1ccccc1C(=O)O", order="chemical")
+    sorted_set = embed("CC(=O)Oc1ccccc1C(=O)O", order="chemical_canonical_order")
+    assert set(chemical.backbone_atoms) == set(sorted_set.backbone_atoms)
+    assert list(sorted_set.backbone_atoms) == sorted(sorted_set.backbone_atoms)
+    assert chemical.backbone_atoms != sorted_set.backbone_atoms
+
+
+def test_random_start_is_seeded_and_seed_dependent() -> None:
+    first = embed("CCCCCCCCCCCC", order="random", random_seed=1)
+    again = embed("CCCCCCCCCCCC", order="random", random_seed=1)
+    other = embed("CCCCCCCCCCCC", order="random", random_seed=2)
+    assert np.allclose(first.features, again.features)
+    assert first.backbone_atoms != other.backbone_atoms
+
+
+def test_source_random_keeps_the_counter_ion_and_its_traversal() -> None:
+    from analysis_features.atom_order import random_start_backbone
+    from analysis_features.standardize import parse
+
+    result = embed(PROPRANOLOL_SALT, order="source_random", strip_salts=False, random_seed=0)
+    mol = parse(PROPRANOLOL_SALT)
+    assert "Cl" in result.parent_smiles
+    assert result.backbone_atoms == random_start_backbone(mol, 0)
+    assert len(result.backbone_atoms) == 10
+
+
+def test_canonical_shuffled_keeps_the_canonical_set() -> None:
+    canonical = embed("CC(=O)Oc1ccccc1C(=O)O", order="canonical")
+    shuffled = embed("CC(=O)Oc1ccccc1C(=O)O", order="canonical_shuffled", random_seed=0)
+    assert set(canonical.backbone_atoms) == set(shuffled.backbone_atoms)
+    assert canonical.backbone_atoms != shuffled.backbone_atoms

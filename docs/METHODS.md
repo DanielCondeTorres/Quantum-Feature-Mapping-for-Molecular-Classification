@@ -87,10 +87,13 @@ should be stated wherever the circuit is compared with classical descriptors.
 
 ## Reproducibility
 
-The cleaning pipeline, the exact NumPy state-vector simulator and the tests are
-in `analysis_features/`. The modelling table, audit table, invalid-SMILES list,
-fragment audit, per-stage log and machine-readable settings (including the
-RDKit version) are in `data/processed/`. The modelling table is sorted by a
-structure hash and contains no source-row column; the audit table retains
-provenance and must not be joined into model features, because source order
-alone is predictive of the label in this dataset.
+The cleaning pipeline, the exact NumPy state-vector simulator, the atom-order
+benchmark and the tests are in `analysis_features/`. The modelling table, audit
+table, invalid-SMILES list, fragment audit, per-stage log and machine-readable
+settings (including the RDKit version) are in `data/processed/`. The modelling
+table is sorted by a structure hash and contains no source-row column; the audit
+table retains provenance and must not be joined into model features, because
+source order alone is predictive of the label in this dataset. Running
+`python -m analysis_features verify` re-checks every cleaning requirement
+against the committed files, and `python -m analysis_features benchmark`
+reproduces the atom-order comparison in `results/`.

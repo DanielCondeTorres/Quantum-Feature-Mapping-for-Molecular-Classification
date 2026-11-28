@@ -3,6 +3,7 @@
     python -m analysis_features clean
     python -m analysis_features embed --smiles "[Cl].CC(C)NCC(O)COc1cccc2ccccc12"
     python -m analysis_features summary
+    python -m analysis_features benchmark
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import pandas as pd
 
 from .cleaning import clean_dataset
 from .config import DEFAULT_OUTDIR, DEFAULT_PREVIOUS, DEFAULT_RAW
-from .embedding import embed
+from .embedding import ORDER_CHOICES, embed
 from .io import display_path, load_previous_smiles, load_raw, write_outputs
 
 
@@ -44,6 +45,7 @@ def _embed(args: argparse.Namespace) -> None:
         tail_mode=args.tail,
         readout=args.readout,
         strip_salts=not args.keep_salts,
+        random_seed=args.seed,
     )
     if args.json:
         print(json.dumps(result.as_dict(), indent=2))
@@ -87,6 +89,21 @@ def _summary(args: argparse.Namespace) -> None:
         print("WARNING: source_num is present; never use it as a model feature.")
 
 
+def _benchmark(args: argparse.Namespace) -> None:
+    from .benchmark import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+    print(f"\nSaved: {args.outdir}")
+
+
+def _verify(args: argparse.Namespace) -> None:
+    from .verify import main as verify_main
+
+    raise SystemExit(verify_main(args.outdir))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m analysis_features",
@@ -108,10 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     embedding = subparsers.add_parser("embed", help="print one molecule's circuit")
     embedding.add_argument("--smiles", required=True)
-    embedding.add_argument("--order", choices=("canonical", "source"), default="canonical")
+    embedding.add_argument("--order", choices=ORDER_CHOICES, default="canonical")
     embedding.add_argument("--property", choices=("pauling", "tpsa"), default="pauling")
     embedding.add_argument("--tail", choices=("paper", "global"), default="paper")
     embedding.add_argument("--readout", choices=("z_zz", "full"), default="z_zz")
+    embedding.add_argument("--seed", type=int, default=0, help="seed for random orders")
     embedding.add_argument(
         "--keep-salts",
         action="store_true",
@@ -123,6 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
     summary = subparsers.add_parser("summary", help="summarise a cleaned CSV")
     summary.add_argument("--clean", type=Path, default=DEFAULT_OUTDIR / "BBBP_clean_full.csv")
     summary.set_defaults(func=_summary)
+
+    benchmark = subparsers.add_parser(
+        "benchmark", help="compare atom-ordering rules on scaffold folds"
+    )
+    benchmark.add_argument("--outdir", type=Path, default=Path("results"))
+    benchmark.set_defaults(func=_benchmark)
+
+    verify = subparsers.add_parser("verify", help="check every cleaning requirement")
+    verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
+    verify.set_defaults(func=_verify)
 
     return parser
 

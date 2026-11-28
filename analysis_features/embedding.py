@@ -23,6 +23,11 @@ import numpy as np
 from rdkit import Chem, RDConfig
 from rdkit.Chem import ChemicalFeatures, rdMolDescriptors
 
+from .atom_order import (
+    chemical_coverage_backbone,
+    random_start_backbone,
+    shuffled_backbone,
+)
 from .config import ALPHA, N_BACKBONE, N_QUBITS, TAIL_MARGIN, TPSA_CAP
 from .elements import electronegativity
 from .standardize import canonical_smiles, choose_parent, parse
@@ -50,6 +55,8 @@ class Embedding:
     tail_mode: str
     readout: str
     qubits: tuple[QubitInfo, ...]
+    backbone_atoms: tuple[int, ...]
+    tail_atoms: tuple[int, ...]
     tail_angles: tuple[float, float]
     bond_gates: tuple[tuple[int, int, float], ...]
     features: np.ndarray
@@ -72,6 +79,8 @@ class Embedding:
                 }
                 for q in self.qubits
             ],
+            "backbone_atoms": list(self.backbone_atoms),
+            "tail_atoms": list(self.tail_atoms),
             "tail_angles": list(self.tail_angles),
             "bond_gates": [list(gate) for gate in self.bond_gates],
             "n_features": int(self.features.size),
@@ -243,12 +252,24 @@ def build_statevector(
     *,
     property: str = "pauling",
     tail_mode: str = "paper",
+    backbone_indices: list[int] | tuple[int, ...] | None = None,
 ) -> tuple[np.ndarray, list[QubitInfo], tuple[float, float], list[tuple[int, int, float]]]:
-    """Evolve |0...0> through the 10+2 circuit and return the state."""
+    """Evolve |0...0> through the 10+2 circuit and return the state.
+
+    ``backbone_indices`` overrides the default "first ten heavy atoms" rule.
+    The tail is every remaining heavy atom, kept in molecule order.
+    """
     if tail_mode not in {"paper", "global"}:
         raise ValueError("tail_mode must be 'paper' or 'global'")
 
-    backbone, tail = split_backbone(mol)
+    if backbone_indices is None:
+        backbone, tail = split_backbone(mol)
+    else:
+        backbone = list(backbone_indices)
+        backbone_set = set(backbone)
+        tail = [
+            idx for idx in heavy_atom_indices(mol) if idx not in backbone_set
+        ]
     atom_to_qubit = {atom: qubit for qubit, atom in enumerate(backbone)}
     tail_set = set(tail)
     angles = atom_angles(mol, backbone, property=property)
@@ -326,6 +347,23 @@ def pauli_z_moments(probability_vector: np.ndarray) -> np.ndarray:
     return np.concatenate((probability_vector @ single, probability_vector @ double))
 
 
+ORDER_CHOICES = (
+    "canonical",
+    "source",
+    "chemical",
+    "chemical_canonical_order",
+    "random",
+    "source_random",
+    "canonical_shuffled",
+)
+_GRAPH_ORDERS = {
+    "chemical",
+    "chemical_canonical_order",
+    "random",
+    "canonical_shuffled",
+}
+
+
 def embed(
     smiles: str,
     *,
@@ -334,16 +372,23 @@ def embed(
     tail_mode: str = "paper",
     readout: str = "z_zz",
     strip_salts: bool = True,
+    random_seed: int = 0,
 ) -> Embedding:
     """Build the circuit and feature vector for one molecule.
 
     Parameters
     ----------
     order:
-        ``"canonical"`` re-parses RDKit's canonical SMILES before numbering
-        atoms (reproducible across input spellings). ``"source"`` keeps the
-        atom order of the string as written; this is the published baseline
-        and is deliberately representation-dependent.
+        ``"canonical"``: first ten heavy atoms of canonical SMILES.
+        ``"source"``: first ten atoms of the string as written (published
+        baseline, representation-dependent).
+        ``"chemical"``: graph-derived coverage selector.
+        ``"chemical_canonical_order"``: chemical set, canonical qubit order
+        (diagnostic).
+        ``"random"``: canonical order rotated to a random starting atom.
+        ``"source_random"``: source-string order rotated to a random starting
+        atom (keeps counter-ions; the published baseline with a random q0).
+        ``"canonical_shuffled"``: first ten canonical atoms in random order.
     property:
         ``"pauling"`` (paper) or ``"tpsa"`` (optional ablation).
     tail_mode:
@@ -351,9 +396,11 @@ def embed(
         (chemical/structural summaries used in the newer ablations).
     readout:
         ``"z_zz"`` (78 Pauli moments) or ``"full"`` (4096 probabilities).
+    random_seed:
+        Used only by the two random orderings.
     """
-    if order not in {"canonical", "source"}:
-        raise ValueError("order must be 'canonical' or 'source'")
+    if order not in ORDER_CHOICES:
+        raise ValueError(f"order must be one of {ORDER_CHOICES}")
     if readout not in {"z_zz", "full"}:
         raise ValueError("readout must be 'z_zz' or 'full'")
 
@@ -363,14 +410,35 @@ def embed(
 
     choice = choose_parent(original)
     parent = choice.parent if strip_salts else original
-    if order == "canonical":
+    if order == "canonical" or order in _GRAPH_ORDERS:
         parent = parse(canonical_smiles(parent))
 
+    backbone = None
+    if order == "chemical":
+        backbone = chemical_coverage_backbone(parent).selected_atoms
+    elif order == "chemical_canonical_order":
+        backbone = tuple(sorted(chemical_coverage_backbone(parent).selected_atoms))
+    elif order == "random":
+        backbone = random_start_backbone(parent, random_seed)
+    elif order == "source_random":
+        backbone = random_start_backbone(parent, random_seed)
+    elif order == "canonical_shuffled":
+        backbone = shuffled_backbone(parent, random_seed)
+
     state, qubits, tail_angles, bond_gates = build_statevector(
-        parent, property=property, tail_mode=tail_mode
+        parent,
+        property=property,
+        tail_mode=tail_mode,
+        backbone_indices=backbone,
     )
     vector = probabilities(state)
     features = vector if readout == "full" else pauli_z_moments(vector)
+
+    backbone_atoms = tuple(q.atom_index for q in qubits)
+    backbone_set = set(backbone_atoms)
+    tail_atoms = tuple(
+        idx for idx in heavy_atom_indices(parent) if idx not in backbone_set
+    )
 
     return Embedding(
         input_smiles=smiles,
@@ -381,6 +449,8 @@ def embed(
         tail_mode=tail_mode,
         readout=readout,
         qubits=tuple(qubits),
+        backbone_atoms=backbone_atoms,
+        tail_atoms=tail_atoms,
         tail_angles=tail_angles,
         bond_gates=tuple(bond_gates),
         features=features,
