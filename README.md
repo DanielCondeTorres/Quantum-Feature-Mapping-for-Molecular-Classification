@@ -69,7 +69,8 @@ This is the audit a reviewer should demand. Every number below is reproduced by
 5. **Remove duplicates; exclude unsupported label conflicts.** **11 structures**
    appear with both labels (**22 rows**), propranolol among them (HCl salt
    labelled 1, free base labelled 0). With no external evidence for the
-   correct label we **exclude both rows** rather than impute one. Then **62**
+   correct label we **exclude both rows** rather than impute one; §1.3 lists
+   all 11 structures and explains the likely provenance of the contradiction. Then **62**
    identical-structure duplicates are collapsed, keeping the first occurrence.
    Final table: **1955 unique molecules** (461 label 0, 1494 label 1).
    `BBBP_clean_audit.csv` records `excluded_reason ∈ {included,
@@ -215,6 +216,28 @@ Exactly **95 of the 2050** deposited rows are absent from `data/processed/BBBP_c
 | 2031 | trifluoperazine | `C1=C(C=CC3=C1N(CCCN2CCN(CC2)C)C4=C(S3)C=CC=C4)C(F)(F)F` | 1 | duplicate structure | same parent as source row 245; first occurrence kept |
 | 2045 | zimeldine | `C2=C(\C(C1=CC=CN=C1)=C\CN(C)C)C=CC(=C2)Br` | 1 | duplicate structure | same parent as source row 252; first occurrence kept |
 
+### 1.3 Why the same molecule appears with label 0 and label 1
+
+The raw table is a compilation of results from different literature sources. It records only `name`, `SMILES` and `p_np` — no assay, species, dose or reference — so the reason for a contradiction cannot be resolved from the file itself. What *is* verifiable is that the same standardised structure was deposited more than once, often under a synonym or a different salt form, with different labels. For example propranolol appears as the hydrochloride (row 1, label 1) and as the free base (row 380, label 0); aspirin appears as "acetylsalicylate" (row 102, label 0) and "aspirin" (row 1009, label 1). Common causes in this kind of compilation are different experimental endpoints (in vivo brain/blood ratio vs in vitro permeability), different species or doses, and different deposited forms (salt vs free base, racemate vs single enantiomer). We do **not** claim to know which label is correct for any specific row.
+
+Because no external evidence is available in the repository, the rule is conservative: **all rows of a conflicting structure are excluded**. Keeping either one would inject an arbitrary label choice into both training and test folds. The 11 affected structures (22 rows) are:
+
+| Canonical parent | Source rows (label) | Deposited names |
+|---|---|---|
+| `CC(=O)Oc1ccccc1C(=O)O` | 102 (0), 1009 (1) | acetylsalicylate, aspirin |
+| `CC(C)NCC(O)COc1cccc2ccccc12` | 1 (1), 380 (0) | Propanolol, propranolol |
+| `CCOC(=O)N1CCC(=C2c3ccc(Cl)cc3CCc3cccnc32)CC1` | 571 (0), 1338 (1) | loratadine |
+| `CN(C)C(=O)C(CCN1CCC(O)(c2ccc(Cl)cc2)CC1)(c1ccccc1)c1ccccc1` | 17 (1), 552 (0) | BRL53080, loperamide |
+| `CN1C2CCC1CC(OC(=O)C(CO)c1ccccc1)C2` | 128 (0), 1701 (1) | atropine, atropine(hyoscyamine) |
+| `COc1cc(NCc2ccc3nc(N)nc(N)c3c2C)cc(OC)c1OC` | 176 (0), 1645 (1) | Trimetrexate, trimetrexate |
+| `COc1ccc2c(c1)c(CC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1` | 267 (0), 1314 (1) | indomethacin, indomethacin(indometacin) |
+| `C[C@H]1C[C@@H]2[C@H]([C@@H](O)C[C@@]3(C)[C@H]2CC[C@]3(O)C(=O)CO)[C@@]2(C)C=CC(=O)C=C12` | 325 (0), 1910 (1) | Methylprednisolone, methylprednisolone |
+| `Clc1ccc(COC(Cn2ccnc2)c2ccc(Cl)cc2Cl)c(Cl)c1` | 326 (0), 1381 (1) | Miconazole, miconazole |
+| `N[C@@H](Cc1ccc(O)c(O)c1)C(=O)O` | 284 (0), 1881 (1) | levodopa |
+| `c1ccc2c(c1)Sc1ccccc1N2CC1CN2CCC1CC2` | 305 (0), 1361 (1) | mequitazine |
+
+The full row-by-row list, including the original SMILES of each conflicting entry, is in §1.2 and in `data/processed/BBBP_excluded_molecules.csv`.
+
 ---
 
 ## 2. Methods: from molecular graph to circuit
@@ -340,6 +363,8 @@ Ranked ideas, with the evidence status stated explicitly:
 
 Ideas 1–2 are backed by the results above; 3–6 are **proposals, not validated
 results** and are listed so the limitations are explicit rather than hidden.
+A critical implementation audit, including one high-severity documentation/
+behaviour mismatch in the `source_*` controls, is in `docs/CODE_REVIEW.md`.
 
 **If I had to pick one change:** combine (1) and (2) — keep the chemistry-driven,
 equal-weight score but force the ten backbone atoms to be a **connected
