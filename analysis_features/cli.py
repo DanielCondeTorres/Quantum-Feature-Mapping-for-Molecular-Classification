@@ -14,6 +14,7 @@
     python -m analysis_features embedding-comparison
     python -m analysis_features diagram
     python -m analysis_features circuit-diagram
+    python -m analysis_features kernel-comparison
     python -m analysis_features weight-probe
 """
 
@@ -188,6 +189,14 @@ def _circuit_diagram(args: argparse.Namespace) -> None:
     print(draw(args.outdir))
 
 
+def _kernel_comparison(args: argparse.Namespace) -> None:
+    from .hybrid_kernel import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
 def _weight_probe(args: argparse.Namespace) -> None:
     from .weight_probe import run
 
@@ -310,6 +319,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     circuit.add_argument("--outdir", type=Path, default=Path("results"))
     circuit.set_defaults(func=_circuit_diagram)
+
+    kernel = subparsers.add_parser(
+        "kernel-comparison", help="hybrid RBF kernels: quantum vs classical chemistry"
+    )
+    kernel.add_argument("--outdir", type=Path, default=Path("results"))
+    kernel.set_defaults(func=_kernel_comparison)
 
     weights = subparsers.add_parser(
         "weight-probe", help="sensitivity of the fixed importance weights"

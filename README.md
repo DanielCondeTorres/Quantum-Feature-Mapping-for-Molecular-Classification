@@ -260,6 +260,15 @@ The 12‑qubit circuit is built as follows:
 
 > The circuit is a **feature map**; the SVM makes the final prediction. Community selection takes the single highest-scoring atom of each community (no descriptor averaging); only the tail pools atoms, by alternating sums of Pauling electronegativity. Stereochemistry is retained in the isomeric SMILES but ignored by the gates, so enantiomers currently produce identical features — see `results/README.md` for the mechanism and design options.
 
+The two panels compared below differ **only in the backbone angle**:
+
+| Embedding | Angle on qubit `qi` | Value for C / O |
+|---|---|---|
+| Published Pauli map | `θi = 0.1·χi²`, χ = Pauling electronegativity | 0.65 / 1.18 rad |
+| New feature map | `θi = 0.1·si²`, where `si` is that atom's importance score — the **equal-weight mean of the nine normalised RDKit descriptors** (TPSA, logP, MR, HBD, HBA, Gasteiger, formal charge, heteroatom, aromaticity) | 0–0.1 rad (score ∈ [0,1]) |
+
+The score is a weighted sum of those per-atom chemical properties; it is then squared and scaled by the same α = 0.1, so both maps keep the same functional form and only the property feeding the angle changes. The tail rule is unchanged in both.
+
 The diagram below is **the actual circuit**, not a cartoon: `python -m analysis_features circuit-diagram` reads the angles from the same `build_statevector` function used for the results and draws a Qiskit `QuantumCircuit` with `draw("mpl")`. For aspirin (14 heavy atoms), q0–q9 receive `Ry(0.1·χ²)` (0.65 rad for C, 1.18 rad for O), q10/q11 receive the alternating tail sums (0.300 / 0.172 rad), and the bonds become `Rxx(order/2)` gates — including two interface gates per backbone–tail bond. Every angle and gate is listed in `results/quantum_circuit.json`.
 
 ![Qiskit drawing of the 12-qubit feature-map circuit](results/quantum_circuit_qiskit.png)
@@ -411,6 +420,44 @@ For reference, the paper-style protocol in `random_qubit_test.py` also reports
 train / 391 test per split, but **not scaffold-disjoint**. It is reported
 separately and is not the basis of the headline numbers.
 
+### 2.7 New experiment: hybrid RBF kernels (`hybrid_kernel.py`)
+
+A new module, added without changing any existing experiment, asks whether the
+quantum moments help **when combined with classical chemistry** rather than
+competed against it. Three feature blocks are standardised and turned into RBF
+kernels inside each training fold: the 78 Pauli moments, a 256-bit ECFP4
+fingerprint, and 22 interpretable RDKit descriptors (element counts, MW, logP,
+TPSA, HBD/HBA, rotatable bonds, aromatic rings, Csp3 fraction, heavy atoms,
+rings, heteroatoms, amide bonds). Their kernels are summed with fixed weights;
+no weight or hyperparameter is chosen by test AUC.
+
+| Arm | Kernel weights (q/morgan/desc) | AUC [95% CI] | Balanced acc. |
+|---|---|---:|---:|
+| quantum only | 1/0/0 | 0.775 [0.748, 0.800] | 0.690 |
+| morgan only | 0/1/0 | 0.898 [0.880, 0.915] | 0.783 |
+| descriptors only | 0/0/1 | 0.887 [0.868, 0.904] | 0.767 |
+| **morgan + descriptors** | **0/1/1** | **0.912 [0.895, 0.929]** | **0.792** |
+| quantum + morgan | 1/1/0 | 0.885 [0.865, 0.903] | 0.771 |
+| all three | 1/1/1 | 0.900 [0.880, 0.918] | 0.782 |
+
+![Hybrid kernel confusion matrices](results/confusion_matrices_kernel_comparison.png)
+
+*Figure 5 – Six out-of-fold confusion matrices from the hybrid-kernel experiment. Same folds and SVM as every other result in this README.*
+
+**Honest conclusion.** The best point estimate is Morgan + descriptors
+(0.9124 vs 0.8981 for Morgan alone), but the bootstrap CIs overlap, so this is
+**not a statistically established gain**; it is a hypothesis worth validating
+on external data. Adding the quantum kernel *lowers* AUC (0.900 for all three,
+0.885 for quantum + Morgan), so on this dataset the 78 Pauli moments do not
+carry information complementary to ECFP4 plus descriptors. This is a negative
+result for quantum advantage, reported as such — not a reason to tune weights
+until the quantum arms look better. The bootstrap used here is the existing
+i.i.d. implementation (`docs/CODE_REVIEW.md`, issue 6), which ignores scaffold
+clustering and therefore gives narrower intervals than a cluster bootstrap.
+
+Reproduce with `python -m analysis_features kernel-comparison`; all numbers,
+counts and configuration are in `results/kernel_comparison.csv` / `.json`.
+
 ---
 
 ## 3. Reproducibility
@@ -436,6 +483,9 @@ python -m analysis_features diagram
 
 # Draw the real 12-qubit circuit with Qiskit
 python -m analysis_features circuit-diagram
+
+# New hybrid-kernel experiment (quantum vs classical chemistry)
+python -m analysis_features kernel-comparison
 
 # Sensitivity analysis of descriptor weights
 python -m analysis_features weight-probe
