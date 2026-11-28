@@ -64,6 +64,9 @@ python -m analysis_features compare
 # Random-source q0 vs per-atom RDKit property selectors + PCA
 python -m analysis_features property-probe
 
+# The four requested feature treatments + 4 confusion matrices
+python -m analysis_features four-features
+
 # Tests
 python -m pytest
 ```
@@ -87,6 +90,7 @@ analysis_features/
   benchmark.py     # atom-order comparison on scaffold folds + confusion matrix
   compare.py       # main (250 subset, source) vs cleaned full dataset
   property_probe.py # random q0 vs per-atom RDKit property selectors + PCA
+  four_features.py # source / random q0 / PC1-PC2 / TPSA + 4 confusion matrices
   verify.py        # independent check of every cleaning requirement
   io.py            # read raw tables, write the six deliverable files
   cli.py           # clean / embed / summary / benchmark / compare / property-probe / verify
@@ -115,6 +119,8 @@ results/
   property_selector_benchmark.csv / .json
   pca_property_selectors.png
   confusion_matrix_property_selectors.png
+  four_features_benchmark.csv / .json
+  confusion_matrices_four_features.png
 ```
 
 ---
@@ -509,10 +515,29 @@ y quitar sales no lo reduce (0.8245). El PCA no separa las clases en ningún
 brazo (PC1+PC2 explica 39–51% de la varianza y las nubes se solapan); la
 separación la hace la SVM RBF.
 
-`results/pca_property_selectors.png` shows the PCA of the 78 moment vectors
-(coloured by `p_np`) and the matching out-of-fold confusion matrices for
-`source`, `source_random` (seed 1), `canonical`, `property_tpsa`,
-`property_role` and `property_mixed`.
+`results/pca_property_selectors.png` muestra el PCA de los 78 momentos para
+`source`, `source_random` (semilla 1), `canonical`, `property_tpsa`,
+`property_role` y `property_mixed`; las matrices de esos seis brazos están en
+`results/confusion_matrix_property_selectors.png`.
+
+### Los cuatro brazos que pediste
+
+`python -m analysis_features four-features` compara únicamente estos cuatro
+tratamientos del circuito sobre el CSV limpio de 1955 moléculas, con los mismos
+folds y SVM:
+
+| Brazo | Features para el clasificador | AUC | BalAcc |
+|---|---|---:|---:|
+| `source` (orden SMILES + Pauling) | 78 momentos | **0.8805** (fuga) | 0.796 |
+| `source_random` (mismo string, q0 aleatorio) | 78 momentos | 0.8281 | 0.740 |
+| `tpsa` (orden canónico + ángulo TPSA) | 78 momentos | 0.8073 | 0.720 |
+| `pca2` (circuito canónico → PC1/PC2) | 2 componentes | 0.5933 | 0.500 |
+
+Las cuatro matrices de confusión están en
+`results/confusion_matrices_four_features.png`. TPSA es el mejor brazo
+estructural (0.8073, algo por encima del 0.8015 canónico con Pauling, con IC
+solapados); PC1/PC2 no sirven: el PCA no conserva la varianza que separa las
+clases y el SVM colapsa a predecir siempre “permeable” (BalAcc 0.500).
 
 ---
 

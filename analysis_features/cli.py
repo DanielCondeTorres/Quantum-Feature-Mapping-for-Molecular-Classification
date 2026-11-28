@@ -6,6 +6,7 @@
     python -m analysis_features benchmark
     python -m analysis_features compare
     python -m analysis_features property-probe
+    python -m analysis_features four-features
 """
 
 from __future__ import annotations
@@ -100,6 +101,15 @@ def _benchmark(args: argparse.Namespace) -> None:
     print(f"\nSaved: {args.outdir}")
 
 
+def _four_features(args: argparse.Namespace) -> None:
+    from .four_features import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+    print(f"\nSaved four confusion matrices to: {args.outdir}")
+
+
 def _property_probe(args: argparse.Namespace) -> None:
     from .property_probe import run
 
@@ -182,6 +192,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe.add_argument("--outdir", type=Path, default=Path("results"))
     probe.set_defaults(func=_property_probe)
+
+    four = subparsers.add_parser(
+        "four-features",
+        help="source order, random q0, PC1/PC2 and TPSA on the cleaned dataset",
+    )
+    four.add_argument("--outdir", type=Path, default=Path("results"))
+    four.set_defaults(func=_four_features)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

@@ -241,6 +241,38 @@ mejora el mapa 10+2; la ventaja aparente del `source` con inicio aleatorio es
 fuga de procedencia, y el mejor modelo real sigue siendo el clásico de Morgan
 (AUC 0.882).
 
+## The requested four-feature comparison
+
+`python -m analysis_features four-features` runs **only** these four arms on the
+cleaned 1955-row table. Everything else is identical: 1016 scaffold groups,
+five folds, `global` tail, StandardScaler fitted in-fold and RBF SVM `C=10`.
+For `pca2`, PC1/PC2 come from the 78 moments and the scaler **and** PCA are
+fitted inside each training fold, so no test information leaks.
+
+| Arm | Circuit feature | Classifier features | AUC (95% CI) | Bal. acc. |
+|---|---|---:|---:|---:|
+| `source` | SMILES order + Pauling angles | 78 | **0.8805** (0.862–0.899) | 0.796 |
+| `source_random` | same string, random q0 (seed 0) | 78 | 0.8281 (0.805–0.851) | 0.740 |
+| `tpsa` | canonical order + per-atom TPSA angles | 78 | 0.8073 (0.781–0.830) | 0.720 |
+| `pca2` | canonical circuit → PCA of 78 moments | **2** | 0.5933 (0.565–0.622) | 0.500 |
+
+The four confusion matrices are in `confusion_matrices_four_features.png`
+(TN/FP/FN/TP in reading order):
+
+- `source`: 309 / 152 / 118 / 1376
+- `source_random`: 259 / 202 / 121 / 1373
+- `tpsa`: 241 / 220 / 123 / 1371
+- `pca2`: 0 / 461 / 0 / 1494
+
+**Which is best?** By AUC, `source` (0.8805) — but that is the deposited-string
+leak, not chemistry. Among the structure-based arms, **TPSA as the per-atom
+circuit angle is the best** (0.8073), marginally above the canonical Pauling
+encoding (0.8015, CIs overlap); it is an ablation, not the published paper.
+**PC1/PC2 as features are a failure**: unsupervised PCA keeps the largest
+variance, not the label-bearing variance, so the SVM collapses to predicting
+"permeable" for every molecule (balanced accuracy 0.500). Do not use two
+unsupervised components as the feature map for this task.
+
 ## Files
 
 | File | Content |
@@ -258,6 +290,8 @@ fuga de procedencia, y el mejor modelo real sigue siendo el clásico de Morgan
 | `property_selector_benchmark.csv`, `.json` | AUC and PCA variance for random-source q0 vs per-atom property selectors |
 | `pca_property_selectors.png` | PCA (2x3) of the 78 moments coloured by label for six selectors |
 | `confusion_matrix_property_selectors.png` | Out-of-fold confusion matrices (2x3) for the same six selectors |
+| `four_features_benchmark.csv`, `.json` | The four requested arms: source, random q0, PC1/PC2 and TPSA |
+| `confusion_matrices_four_features.png` | The four out-of-fold confusion matrices (2x2) |
 
 Reproduce with:
 
@@ -265,4 +299,5 @@ Reproduce with:
 python -m analysis_features benchmark
 python -m analysis_features compare
 python -m analysis_features property-probe
+python -m analysis_features four-features
 ```
