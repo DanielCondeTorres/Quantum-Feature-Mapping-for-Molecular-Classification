@@ -346,13 +346,13 @@ Ranked ideas, with the evidence status stated explicitly:
    disappears under canonicalisation, and a random backbone (0.634) is worse
    than always predicting "permeable" (0.764). Any future "improvement" must
    be measured against **0.8820 (Morgan SVM)**, not against the leaky arm.
-2. **Hybrid quantum + classical kernel (best-supported next experiment).** A
-   whole-molecule bag of elements already reaches 0.8133, so much of the signal
-   is additive chemistry. Sum an RBF kernel on the 78 Pauli moments with an RBF
-   kernel on Morgan/composition descriptors (both fitted in-fold) and test
-   whether the quantum part adds complementary information. If the hybrid does
-   not beat Morgan alone, the honest conclusion is that the quantum map is
-   redundant here.
+2. **Hybrid quantum + classical kernel (tested — see `ideas/`).** A whole‑molecule
+   bag of elements already reaches 0.8133, so much of the signal is additive
+   chemistry. We summed an RBF kernel on the 78 Pauli moments with kernels on
+   Morgan/composition descriptors, all fitted in-fold. The result was
+   **negative for the quantum part**: Morgan + descriptors reached 0.9124 and
+   adding the quantum kernel lowered AUC to 0.885–0.900. Details and the caveat
+   about overlapping intervals are in `ideas/README.md`.
 3. **Encode chiral pseudoscalars.** 629 molecules carry `@`/`@@`, but the
    circuit is mirror-blind. Add `Rz(±π/4)` from `GetChiralTag()` on the qubit of
    each selected stereocentre (and an `Rz = 0` ablation). This is a genuine new
@@ -420,43 +420,45 @@ For reference, the paper-style protocol in `random_qubit_test.py` also reports
 train / 391 test per split, but **not scaffold-disjoint**. It is reported
 separately and is not the basis of the headline numbers.
 
-### 2.7 New experiment: hybrid RBF kernels (`hybrid_kernel.py`)
+### 2.7 Exploratory folder `ideas/`
 
-A new module, added without changing any existing experiment, asks whether the
-quantum moments help **when combined with classical chemistry** rather than
-competed against it. Three feature blocks are standardised and turned into RBF
-kernels inside each training fold: the 78 Pauli moments, a 256-bit ECFP4
-fingerprint, and 22 interpretable RDKit descriptors (element counts, MW, logP,
-TPSA, HBD/HBA, rotatable bonds, aromatic rings, Csp3 fraction, heavy atoms,
-rings, heteroatoms, amide bonds). Their kernels are summed with fixed weights;
-no weight or hyperparameter is chosen by test AUC.
+One exploratory experiment — summing an RBF similarity kernel from the quantum
+moments with kernels from a Morgan fingerprint and whole-molecule descriptors —
+is kept **outside** the main pipeline in `ideas/hybrid_kernel.py`, with its own
+outputs in `ideas/results/` and a full plain-language explanation in
+`ideas/README.md`. It does not change any headline result. Its best arm
+(Morgan + descriptors, AUC 0.9124) has overlapping confidence intervals with
+Morgan alone (0.8981), and adding the quantum kernel *lowers* AUC (0.885–0.900):
+a negative result for quantum advantage, not a new claim. Reproduce it with
+`python -m ideas.hybrid_kernel`.
 
-| Arm | Kernel weights (q/morgan/desc) | AUC [95% CI] | Balanced acc. |
-|---|---|---:|---:|
-| quantum only | 1/0/0 | 0.775 [0.748, 0.800] | 0.690 |
-| morgan only | 0/1/0 | 0.898 [0.880, 0.915] | 0.783 |
-| descriptors only | 0/0/1 | 0.887 [0.868, 0.904] | 0.767 |
-| **morgan + descriptors** | **0/1/1** | **0.912 [0.895, 0.929]** | **0.792** |
-| quantum + morgan | 1/1/0 | 0.885 [0.865, 0.903] | 0.771 |
-| all three | 1/1/1 | 0.900 [0.880, 0.918] | 0.782 |
+### 2.8 Plain-language glossary of the baselines mentioned above
 
-![Hybrid kernel confusion matrices](results/confusion_matrices_kernel_comparison.png)
+These terms appear in the comparison tables and are often confused, so here is
+what each one actually is:
 
-*Figure 5 – Six out-of-fold confusion matrices from the hybrid-kernel experiment. Same folds and SVM as every other result in this README.*
-
-**Honest conclusion.** The best point estimate is Morgan + descriptors
-(0.9124 vs 0.8981 for Morgan alone), but the bootstrap CIs overlap, so this is
-**not a statistically established gain**; it is a hypothesis worth validating
-on external data. Adding the quantum kernel *lowers* AUC (0.900 for all three,
-0.885 for quantum + Morgan), so on this dataset the 78 Pauli moments do not
-carry information complementary to ECFP4 plus descriptors. This is a negative
-result for quantum advantage, reported as such — not a reason to tune weights
-until the quantum arms look better. The bootstrap used here is the existing
-i.i.d. implementation (`docs/CODE_REVIEW.md`, issue 6), which ignores scaffold
-clustering and therefore gives narrower intervals than a cluster bootstrap.
-
-Reproduce with `python -m analysis_features kernel-comparison`; all numbers,
-counts and configuration are in `results/kernel_comparison.csv` / `.json`.
+- **78 Pauli moments (the quantum features).** After the 12-qubit circuit is
+  applied, we measure 12 single-qubit and 66 two-qubit magnetisation averages.
+  They are 78 real numbers describing the final quantum state; the SVM learns
+  from them. The circuit itself is a *feature map*, not a classifier.
+- **Morgan fingerprint / ECFP4.** A 256-bit **barcode of local fragments**.
+  RDKit walks around every atom up to two bonds away and sets a bit when a
+  particular small neighbourhood is present. It has no quantum content and no
+  3-D information; it is the standard cheminformatics baseline. "Morgan" is the
+  algorithm name, "ECFP4" the common name of the same idea with radius 2.
+- **Whole-molecule atom composition.** Just **counting atoms**, ignoring how
+  they are connected: how many C, N, O, S, Cl, Br, … the molecule has (ten
+  elements are counted here), plus heavy-atom count, bond count,
+  `atoms_beyond_10` and formal charge — 14 numbers in the original control
+  (`composition_controls.csv`, AUC 0.8133). The exploratory `ideas/` experiment
+  uses an extended 22-number version that also includes MW, logP, TPSA,
+  HBD/HBA, rotatable bonds, aromatic rings, Csp3 fraction, rings, heteroatoms
+  and amide bonds. Because it has no connectivity, matching this baseline
+  would mean the circuit is not adding graph information.
+- **RBF kernel.** A similarity score between two feature vectors, near 1 for
+  similar molecules and near 0 for different ones. The SVM classifies from
+  these similarities. A *hybrid* kernel simply adds two or more such similarity
+  matrices together.
 
 ---
 
@@ -484,8 +486,8 @@ python -m analysis_features diagram
 # Draw the real 12-qubit circuit with Qiskit
 python -m analysis_features circuit-diagram
 
-# New hybrid-kernel experiment (quantum vs classical chemistry)
-python -m analysis_features kernel-comparison
+# Optional exploratory experiment (outputs in ideas/results/)
+python -m ideas.hybrid_kernel
 
 # Sensitivity analysis of descriptor weights
 python -m analysis_features weight-probe

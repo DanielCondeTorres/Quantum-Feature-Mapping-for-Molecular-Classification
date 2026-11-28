@@ -680,38 +680,15 @@ stereochemistry flag should be reported. Option 2 is the natural next
 experiment: one new gate family, no extra qubits, and a clear ablation
 (`Rz` angle set to zero) against the present baseline.
 
-## Hybrid RBF kernels: can classical chemistry help the quantum map?
+## Exploratory kernel experiment
 
-`python -m analysis_features kernel-comparison` (new module
-`analysis_features/hybrid_kernel.py`, no existing experiment changed) builds
-three feature blocks — the 78 Pauli moments, a 256-bit ECFP4 fingerprint and
-22 interpretable RDKit descriptors — and fits a sum of RBF kernels with fixed
-weights. Scaling, gamma and the SVM are fitted inside each training fold, on
-the same 1955 molecules and five scaffold-disjoint folds as every other result
-here.
-
-![Six confusion matrices comparing quantum, Morgan, descriptors and their kernel sums](confusion_matrices_kernel_comparison.png)
-
-| Arm | Weights (q/morgan/desc) | AUC [95% CI] | Balanced acc. | Accuracy |
-|---|---|---:|---:|---:|
-| `quantum` | 1/0/0 | 0.7745 [0.7477, 0.7996] | 0.6900 | 0.7887 |
-| `morgan` | 0/1/0 | 0.8981 [0.8802, 0.9149] | 0.7831 | 0.8783 |
-| `descriptors` | 0/0/1 | 0.8869 [0.8678, 0.9039] | 0.7672 | 0.8619 |
-| `morgan+descriptors` | 0/1/1 | **0.9124 [0.8952, 0.9288]** | **0.7923** | 0.8762 |
-| `quantum+morgan` | 1/1/0 | 0.8851 [0.8651, 0.9034] | 0.7710 | 0.8655 |
-| `all_three` | 1/1/1 | 0.8996 [0.8802, 0.9176] | 0.7822 | 0.8665 |
-
-**Reading.** Morgan + descriptors has the best point estimate (+0.014 AUC over
-Morgan alone), but the confidence intervals overlap; we do not claim a
-statistically significant improvement. Adding the quantum kernel gives 0.8996
-(all three) and 0.8851 (quantum + Morgan), both below the purely classical
-combination: the 78 Pauli moments add nothing beyond ECFP4 and descriptors on
-this dataset. The kernel weights are fixed a priori (equal for the two included
-blocks), not chosen because they maximised test AUC; the 2:1 variant that was
-also tried in exploration is deliberately **not** reported as a selected
-model. The intervals come from the existing i.i.d. bootstrap, which ignores
-scaffold clustering and is therefore optimistic (see `docs/CODE_REVIEW.md`).
-Full counts and configuration: `kernel_comparison.csv` / `.json`.
+An experiment combining RBF kernels from the quantum moments, a Morgan
+fingerprint and whole-molecule descriptors is **not** part of the main results.
+It lives in `ideas/hybrid_kernel.py`, with outputs in `ideas/results/` and a
+full plain-language explanation in `ideas/README.md`. Its conclusion was
+negative for the quantum part: adding the quantum kernel lowered AUC relative
+to purely classical descriptors. Nothing in this folder is required to
+reproduce any result listed here.
 
 ## Files
 
@@ -740,7 +717,6 @@ Full counts and configuration: `kernel_comparison.csv` / `.json`.
 | `quantum_circuit_qiskit.png`, `quantum_circuit.json` | Real 12-qubit circuit drawn with Qiskit for aspirin, plus its exact gate manifest |
 | `weight_sensitivity.csv`, `.json` | Equal default vs literature-ranked and 20 random weight vectors |
 | `embedding_comparison.csv`, `.json`, `embedding_comparison.png` | Pauling electronegativity vs new importance features, 2x3 confusion matrices |
-| `kernel_comparison.csv`, `.json`, `confusion_matrices_kernel_comparison.png` | Quantum, Morgan, descriptors and their fixed-weight RBF kernel sums |
 
 Reproduce with:
 
@@ -755,5 +731,7 @@ python -m analysis_features importance-test
 python -m analysis_features three-arms
 python -m analysis_features embedding-comparison
 python -m analysis_features circuit-diagram
-python -m analysis_features kernel-comparison
 ```
+
+The optional exploratory kernel experiment is run separately with
+`python -m ideas.hybrid_kernel` and writes to `ideas/results/`.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from analysis_features.benchmark import load_frame
-from analysis_features.hybrid_kernel import ARMS, build_blocks, evaluate
+from ideas.hybrid_kernel import ARMS, build_blocks, evaluate
 
 
 def test_hybrid_kernel_blocks_and_evaluation() -> None:

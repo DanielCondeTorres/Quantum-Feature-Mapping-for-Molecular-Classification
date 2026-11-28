@@ -1,8 +1,9 @@
 """Hybrid RBF-kernel comparison: quantum moments vs classical chemistry.
 
-    python -m analysis_features kernel-comparison
+    python -m ideas.hybrid_kernel
 
-New experiment, added without changing any existing module or result. The same
+Exploratory idea, kept in ``ideas/`` so the main ``analysis_features`` package
+stays focused on the quantum circuit comparison. The same
 1955 cleaned molecules, 1016 scaffold groups, five scaffold-disjoint folds
 (seed 42) and RBF SVM C=10 are used throughout. Only the feature blocks and
 their kernel combination change:
@@ -56,10 +57,13 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from .benchmark import ELEMENTS, RESULTS_DIR, bootstrap_auc, load_frame, scaffold_groups
-from .embedding import embed
+from analysis_features.benchmark import ELEMENTS, bootstrap_auc, load_frame, scaffold_groups
+from analysis_features.embedding import embed
 
 RDLogger.DisableLog("rdApp.*")
+
+# Exploratory outputs stay next to this module, not in the main results/ folder.
+IDEAS_RESULTS = Path(__file__).resolve().parent / "results"
 
 N_FOLDS = 5
 FOLD_SEED = 42
@@ -233,7 +237,7 @@ def plot(results: list[Result], path: Path) -> None:
     plt.close(fig)
 
 
-def run(outdir: Path = RESULTS_DIR) -> pd.DataFrame:
+def run(outdir: Path = IDEAS_RESULTS) -> pd.DataFrame:
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     frame = load_frame()
