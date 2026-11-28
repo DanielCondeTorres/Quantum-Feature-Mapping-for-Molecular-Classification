@@ -387,6 +387,7 @@ def embed(
     readout: str = "z_zz",
     strip_salts: bool = True,
     random_seed: int = 0,
+    selection_weights: dict[str, float] | None = None,
 ) -> Embedding:
     """Build the circuit and feature vector for one molecule.
 
@@ -421,6 +422,9 @@ def embed(
         ``"z_zz"`` (78 Pauli moments) or ``"full"`` (4096 probabilities).
     random_seed:
         Used only by the two random orderings.
+    selection_weights:
+        Optional replacement for the fixed importance weights, used only by
+        ``importance`` and ``community_importance`` (sensitivity analysis).
     """
     if order not in ORDER_CHOICES:
         raise ValueError(f"order must be one of {ORDER_CHOICES}")
@@ -452,9 +456,9 @@ def embed(
     elif order.startswith("property_"):
         backbone = property_backbone(parent, order.removeprefix("property_"))
     elif order == "importance":
-        backbone = importance_backbone(parent)
+        backbone = importance_backbone(parent, weights=selection_weights)
     elif order == "community_importance":
-        backbone = community_importance_backbone(parent)
+        backbone = community_importance_backbone(parent, weights=selection_weights)
 
     state, qubits, tail_angles, bond_gates = build_statevector(
         parent,

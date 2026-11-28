@@ -1,0 +1,7 @@
+embedding,arm,angle_property,selection,auc,accuracy,balanced_accuracy,TN,FP,FN,TP
+pauling,smiles_order,pauling,first ten atoms in the deposited SMILES parse order,0.8602,0.8399,0.7603,281,180,133,1361
+pauling,random_backbone,pauling,ten random heavy atoms from the same parsed molecule (seed 0),0.6342,0.7228,0.5764,138,323,219,1275
+pauling,community_importance,pauling,"best RDKit BBBP scorer per graph community, then global ranking",0.7841,0.8077,0.7099,242,219,157,1337
+new_features,smiles_order,importance,first ten atoms in the deposited SMILES parse order,0.8667,0.8353,0.7602,285,176,146,1348
+new_features,random_backbone,importance,ten random heavy atoms from the same parsed molecule (seed 0),0.6756,0.7616,0.6093,148,313,153,1341
+new_features,community_importance,importance,"best RDKit BBBP scorer per graph community, then global ranking",0.7446,0.7913,0.6715,205,256,152,1342

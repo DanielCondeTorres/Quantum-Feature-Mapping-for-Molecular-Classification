@@ -1,188 +1,141 @@
-# Full BBBP + 10+2 quantum feature map
+# Full BBBP + 10+2 Quantum Feature Map
 
-Rama **`analysis_features`**, creada desde `main`. Todo el trabajo está en esta rama y subido al fork.
+Branch **`analysis_features`** – all work is in this branch.
 
-Este README explica **qué se limpió**, **cómo se construye el embedding** y **qué dan los tres experimentos finales**. El código está pensado para ser leído: `analysis_features/three_arms.py` es autocontenido y solo hace los tres brazos.
+This repository contains a clean pipeline for the BBBP dataset and a 12‑qubit quantum feature map (10 backbone + 2 tail qubits).  The README explains **what was cleaned**, **how the embedding is built**, and the **three main experiments** that compare different qubit‑selection strategies.
 
----
+![Graph‑to‑circuit diagram](results/embedding_diagram.png)
 
-## 1. Los datos (limpios)
-
-Fuente: `data/raw/BBBP.csv`, el crudo de DeepChem con **2050 filas**.
-
-| Etapa | Qué pasa | Filas |
-|---|---|---:|
-| Raw | Tabla original | 2050 |
-| Parseo RDKit | 11 SMILES inválidos (errores de valencia en guanidinas/`[NH2]`), listados en `BBBP_invalid_smiles.csv` | −11 → 2039 |
-| Sales/solventes | Se conserva el fragmento carbonado mayor; propranolol pierde `[Cl]` antes de asignar qubits | 105 filas |
-| Conflictos de etiqueta | 11 estructuras con labels 0 y 1 se excluyen (propranolol, aspirina, L-DOPA…) | −22 filas |
-| Duplicados | Misma estructura con la misma etiqueta → primera aparición | −62 filas |
-| **Final** | **1955 moléculas únicas**, 1494 permeables / 461 no permeables | **1955** |
-
-Comprobaciones (`python -m analysis_features verify`): **34/34**. Tests: **55 pasando**.
-
-Decisiones químicas:
-
-- **Cargas:** se conservan (34 estructuras cargadas). Neutralizar cambia la especie que permea.
-- **Tautómeros:** no se fusionan; solo se marcan 8 filas en conflicto.
-- **Estéreo:** se conserva en SMILES isoméricos, pero el circuito es ciego a quiralidad; 6 filas marcadas.
-- **Electronegatividad:** la tabla de Hannan cubría H, Li, Be, B, C, N, O, F, S, Cl. BBBP contiene **Br, I y P**, que antes recibían un valor por defecto silencioso. Añadidos: P 2.19, Br 2.96, I 2.66; un elemento desconocido ahora lanza error.
-- Columnas `heavy_atom_count`, `bond_count`, `atoms_beyond_10 = max(0, heavy_atoms − 10)`. El 94.7% supera 10 átomos, así que la cola es el caso normal.
-- Los 250 del benchmark anterior sobreviven **250/250** con la misma etiqueta (`in_previous_250`).
-- RDKit **2024.03.5**, log por etapas en `data/processed/BBBP_clean_log.txt`.
+*Figure 1 – Heavy‑atom graph of aspirin and its conversion into the fixed‑width 10+2 circuit.  Blue nodes = backbone (q0‑q9); orange nodes = tail (q10/q11).* 
 
 ---
 
-## 2. Métodos: del grafo molecular al circuito
+## 1. Dataset (cleaned)
 
-### 2.1 Dibujo del embedding
+- Source: `data/raw/BBBP.csv` – 2050 rows from DeepChem.
+- Cleaning stages (see `analysis_features/verify.py`):
+  - **Parse** with RDKit – 11 invalid SMILES.
+  - **Remove salts/solvents** – 105 rows kept, parent molecule chosen by a deterministic rule (largest heavy‑atom fragment).
+  - **Resolve label conflicts** – 11 structures with contradictory labels (e.g. propranolol) are removed.
+  - **Deduplicate** – 62 duplicate structures retained by first occurrence.
+  - **Final count** – 1955 unique molecules (461 non‑permeable, 1494 permeable).
+- The clean CSV, audit logs, RDKit version and a timestamp are written to `data/processed/`.
+- RDKit **2024.03.5**.
 
-```mermaid
-flowchart LR
-  S[SMILES depositado] --> R[RDKit: molécula<br/>grafo de átomos pesados]
-  R --> SEL{¿qué 10 átomos<br/>van a q0-q9?}
-  SEL -->|paper_smiles_order| P[Primeros 10 átomos<br/>en orden de parseo]
-  SEL -->|random_backbone| A[10 átomos al azar]
-  SEL -->|community_importance| C[Score RDKit por átomo<br/>+ comunidades networkx]
-  P --> Q[q0 ... q9]
-  A --> Q
-  C --> Q
-  R --> T[Resto de átomos = cola]
-  T --> TAIL[Suma alternada de χ<br/>A: 0,2,4... → q10<br/>B: 1,3,5... → q11]
-  Q --> CIR[Ry(θi) por átomo<br/>Rxx(bond_order/2) por enlace]
-  TAIL --> CIR
-  CIR --> PSI[Estado de 12 qubits<br/>|ψ⟩]
-  PSI --> M[78 momentos Pauli<br/>12 ⟨Z⟩ + 66 ⟨ZZ⟩]
-  M --> SVM[SVM RBF, C=10]
-  SVM --> Y[Permeable / no permeable]
-```
+### Key decisions
+| Decision | Description |
+|---|---|
+| **Charges** | Kept as‑is; no neutralisation. |
+| **Tautomers** | Not merged; marked if ambiguous. |
+| **Stereochemistry** | Retained; the quantum circuit is stereocontrolled‑blind. |
+| **Electronegativities** | Hannan table extended with Br 2.96, I 2.66, P 2.19; missing elements raise an error. |
+| **Tail size** | `atoms_beyond_10 = max(0, heavy_atom_count‑10)`; 94.7 % of molecules have a tail.
 
-Distribución de cables:
+---
 
-```text
-q0 ─Ry(0.1·χ0²)─ q1 ─Ry(0.1·χ1²)─ ... ─ q9 ─Ry(0.1·χ9²)
-        └── Rxx(orden_de_enlace / 2) entre átomos del backbone que estén unidos ──┘
+## 2. Methods: from molecular graph to circuit
 
-q10 ← (0.1/2) · Σ χ(átomos de la cola en posiciones pares)
-q11 ← (0.1/2) · Σ χ(átomos de la cola en posiciones impares)
+### 2.1 Embedding construction
 
-Un enlace backbone–cola emite DOS compuertas Rxx: una a q10 y otra a q11.
-Un enlace cola–cola no emite Rxx (sus átomos ya entraron en las sumas).
-```
+The 12‑qubit circuit is built as follows:
 
-### 2.2 ¿Es una suma para clasificar?
+1. **Parse SMILES → RDKit molecule → heavy‑atom graph**.
+2. **Select 10 backbone atoms** using one of three strategies:
+   * `paper_smiles_order` – first 10 atoms in the SMILES order.
+   * `random_backbone` – 10 atoms chosen uniformly at random.
+   * `community_importance` – scores each heavy atom by a weighted sum of nine RDKit descriptors (see Table 1), then picks the highest‑scoring atom per community detected by `networkx.greedy_modularity_communities`.
+3. **Tail atoms** (remaining heavy atoms) are compressed into two qubits (q10 and q11) by alternating the sum of their Pauling electronegativities.
+4. **Apply gates**:
+   * `Ry(θi)` on qubit `qi` with `θi = ALPHA * χi²` (α = 0.1, χ = electronegativity).
+   * `Rxx(bond_order/2)` for each bond inside the backbone.
+5. **Readouts**: 12 `<Z>` moments and 66 `<ZZ>` moments (78 features in total).
+6. **Classifier**: a classical SVM with RBF kernel (`C = 10`) trained on the 78‑dimensional feature vectors.
 
-**No.** La clasificación no es una suma de propiedades atómicas. El circuito produce un estado cuántico de 12 qubits y de él se leen **78 números** (momentos de Pauli). Esos 78 números van a una **SVM con kernel RBF**, que es la que decide la etiqueta. Las únicas sumas son internas al circuito y tienen una escala fija:
+> The circuit is a **feature map**; the SVM makes the final prediction.
 
-1. **Suma de la cola:** `θ10 = 0.05·Σχ_A` y `θ11 = 0.05·Σχ_B`. Se usan los valores de Pauling directamente, sin z-score. El factor `0.1/2` es una constante fija del paper, no un parámetro ajustado.
-2. **Score de selección (solo en `community_importance`):** sí es una suma ponderada, pero **se normaliza dentro de cada molécula** para que las propiedades sean comparables:
+### 2.2 Descriptor weights and why they have those values
 
-```text
-score_i = Σ_k  w_k · |x_i,k − media_k| / max_j |x_j,k − media_k|
-```
+The community‑importance strategy scores each heavy atom with nine descriptors. **The weights are fixed expert priors derived from the medicinal‑chemistry literature on passive BBB permeation; they are never fitted to BBBP labels**, so no test information enters the atom selection.
 
-Los `w_k` son fijos y suman 1. Así cada propiedad queda en `[0,1]` antes de sumarse. No se ajustan a etiquetas.
-
-Además, la SVM estandariza los 78 momentos con `StandardScaler` (z-score), pero **ajustado solo dentro del fold de entrenamiento**, nunca con datos de test. Eso es lo único que se normaliza por z-score.
-
-### 2.3 Propiedades que usa `community_importance`
-
-| Propiedad | Función RDKit / acceso | Peso | Por qué importa para BBBP |
+| Descriptor | RDKit source | Weight | Basis for the weight |
 |---|---|---:|---|
-| Contribución atómica al TPSA | `rdMolDescriptors._CalcTPSAContribs(mol)` | 0.20 | Polaridad; TPSA alto penaliza permeabilidad pasiva |
-| Contribución al logP | `rdMolDescriptors._CalcCrippenContribs(mol)` | 0.20 | Lipofilia; facilita el paso por la bicapa |
-| Refractividad molar (MR) | `_CalcCrippenContribs(mol)` | 0.10 | Polarizabilidad / volumen estérico |
-| Donor de H (HBD) | Roles SMARTS de RDKit (`BaseFeatures.fdef`) | 0.15 | Desolvatación; cuesta más que un aceptor |
-| Aceptor de H (HBA) | Roles SMARTS | 0.10 | Interacción con agua |
-| Carga parcial Gasteiger | `AllChem.ComputeGasteigerCharges(mol)` | 0.10 | Momento dipolar local |
-| Carga formal | `atom.GetFormalCharge()` | 0.05 | Especies ionizadas permean peor |
-| Heteroátomo | `atom.GetAtomicNum() != 6` | 0.05 | N, O, S, halógenos |
-| Aromaticidad | `atom.GetIsAromatic()` | 0.05 | Nitrógeno aromático vs amida/básico |
+| TPSA contribution | `rdMolDescriptors._CalcTPSAContribs` | 0.20 | Polar surface area is the single most used BBB filter: CNS compounds typically need PSA < 90 Å², and reduced PSA correlates with permeation rate better than lipophilicity [1, 2, 3]. |
+| LogP contribution | `rdMolDescriptors._CalcCrippenContribs` | 0.20 | Lipophilicity is the other dominant term; brain uptake follows a parabolic relationship with logP (optimum ≈ 1.5–2.7) [1, 4]. |
+| H‑bond donors | `BaseFeatures.fdef` | 0.15 | Donors impose a larger desolvation penalty than acceptors and are more restrictive in CNS design [1, 5]. |
+| H‑bond acceptors | `BaseFeatures.fdef` | 0.10 | Relevant but less penalising than donors; marketed CNS drugs average ≈ 2.1 acceptors vs ≈ 1.5 donors [1, 5]. |
+| Molar refractivity | `_CalcCrippenContribs` | 0.10 | Size/polarizability appears as an independent term in Abraham‑type BBB equations [4, 6]. |
+| Gasteiger partial charge | `AllChem.ComputeGasteigerCharges` | 0.10 | Local polarity and ionisation state govern desolvation at the membrane interface [1, 7]. |
+| Formal charge | `atom.GetFormalCharge()` | 0.05 | Strong acids/bases are largely excluded from the CNS, but charges are rare here (34 structures), so a small weight prevents domination [1, 7]. |
+| Heteroatom flag | `atom.GetAtomicNum() != 6` | 0.05 | Coarse proxy for hydrogen bonding and PSA; deliberately small because it is redundant with the descriptors above [1]. |
+| Aromaticity | `atom.GetIsAromatic()` | 0.05 | Distinguishes aromatic N from amide N and contributes to membrane affinity; a weak tie‑breaker [1]. |
 
-Luego `networkx.algorithms.community.greedy_modularity_communities` divide el grafo de átomos pesados en comunidades. Se coge el átomo de mayor score de cada comunidad y se rellenan los huecos con el ranking global. Así los 10 qubits representan regiones distintas en vez de concentrarse en un mismo grupo funcional. Los átomos restantes siguen comprimiéndose en q10/q11: en un diseño fijo de 12 qubits no se puede eliminar, pero sí se reparte mejor.
+Each continuous descriptor is rescaled **within each molecule** as `|x_i − mean| / max_j |x_j − mean|`, so it lies in [0, 1] regardless of its physical unit (Å², log units, e). Binary flags are already in {0, 1}. The weights sum to one, so the score is a dimensionless weighted average: they are *relative shares of chemical salience*, not physically comparable coefficients. Note that this score selects **which atoms are resolved by the ten qubits** — it is not a permeability prediction and it is not added to the classifier features; the SVM on the 78 Pauli moments makes the label decision.
 
-**Los otros dos brazos:** `paper_smiles_order` reproduce la regla literal del paper (primeros 10 átomos del SMILES depositado; sin selección química) y `random_backbone` elige 10 átomos al azar como control.
+**Are these numbers optimal? No, and we do not claim they are.** `python -m analysis_features weight-probe` re-runs the identical pipeline with equal weights and 20 random Dirichlet weight vectors: expert priors give AUC **0.7679**, equal weights **0.7697** (Δ = 0.0018), and random draws **0.7538 ± 0.0247** [0.6968, 0.7927]. The exact weights are therefore not critical; what matters is that atom selection is chemistry‑driven rather than random (0.768 vs 0.639 AUC, a gap ≈ 5× the random‑weight standard deviation). Full justification, sensitivity table and references: `results/README.md`.
 
----
+[1] Pajouhesh & Lenz, *NeuroRx* 2:541–553 (2005). [2] Veber et al., *J. Med. Chem.* 45:2615–2623 (2002). [3] Hitchcock & Pennington, *J. Med. Chem.* 49:7559–7583 (2006). [4] Hansch/Leo analysis in [1]. [5] Kenny, *J. Med. Chem.* 65:14261–14275 (2022). [6] Wildman & Crippen, *J. Chem. Inf. Comput. Sci.* 39:868–873 (1999). [7] Muehlbacher et al., *J. Comput.-Aided Mol. Des.* 25:1095–1106 (2011).
 
-## 3. ¿Qué es el AUC?
+### 2.3 Summary of the three experiments
 
-AUC = *Area Under the ROC Curve*. Mide qué tan bien el modelo **ordena** las moléculas: es la probabilidad de que una molécula permeable aleatoria reciba una puntuación más alta que una no permeable aleatoria.
+| Arm | Accuracy | Balanced accuracy | AUC |
+|---|---|---|---|
+| `paper_smiles_order` | 0.8501 | 0.7760 | 0.8559 |
+| `random_backbone` | 0.7407 | 0.5828 | 0.6399 |
+| `community_importance` | 0.8036 | 0.7035 | 0.7679 |
 
-- **0.5** = aleatorio.
-- **1.0** = separación perfecta.
-- Es **independiente del umbral**, por eso se usa junto con la matriz de confusión (que sí depende del umbral 0 de la SVM).
+The **confusion matrices** for each arm are shown in a single figure below (generated by `python -m analysis_features three-arms`).
 
-En este dataset el 76% de las moléculas son permeables: predecir siempre "permeable" da **accuracy 0.764** pero AUC 0.5. Por eso también se reporta *balanced accuracy* (media de la sensibilidad y la especificidad). En los experimentos completos del repo el AUC se acompaña de un intervalo bootstrap al 95%.
+![Confusion matrices for the three arms](results/confusion_matrices_three_arms.png)
 
----
+*Figure 2 – Out‑of‑fold confusion matrices for the three selection strategies.*
 
-## 4. Resultados: tres brazos, mismas condiciones
+### 2.4 Pauling electronegativity vs. the new importance features
 
-Dataset completo limpio (1955 moléculas), 5 folds por scaffold, circuito del paper con la cola alternada, 78 momentos, SVM RBF C=10. Solo cambia la selección de q0–q9.
+The new embedding (`analysis_features/embedding_with_importance.py`) parameterises the ten backbone `Ry` rotations with the per‑atom BBBP importance score `s` instead of the Pauling electronegativity: `θi = 0.1·sᵢ²` rather than `0.1·χᵢ²`. Everything else is unchanged, including the alternating‑electronegativity tail, so the two panels differ only in the backbone angles. The comparison runs both maps on the same three atom‑selection rules, folds and SVM (`python -m analysis_features embedding-comparison`):
 
-| Brazo | Accuracy | Balanced acc. | AUC | IC 95% AUC |
-|---|---:|---:|---:|---:|
-| `paper_smiles_order` | **0.8501** | 0.7760 | **0.8559** | — |
-| `random_backbone` | 0.7407 | 0.5828 | 0.6399 | — |
-| `community_importance` | 0.8036 | 0.7035 | 0.7679 | — |
+| Embedding | SMILES order | Random backbone | Community importance |
+|---|---:|---:|---:|
+| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.784 |
+| New features `s²` | AUC 0.867 | AUC 0.676 | AUC 0.745 |
 
-### Matrices de confusión
+![Pauling vs new features](results/embedding_comparison.png)
 
-Filas = etiqueta real, columnas = predicción. Orden: no permeable (0), permeable (1).
-
-| Brazo | | Pred. no perm. | Pred. perm. |
-|---|---|---:|---:|
-| **paper_smiles_order** | Real no perm. | **TN 293** | FP 168 |
-| | Real perm. | FN 125 | **TP 1369** |
-| **random_backbone** | Real no perm. | **TN 131** | FP 330 |
-| | Real perm. | FN 177 | **TP 1317** |
-| **community_importance** | Real no perm. | **TN 237** | FP 224 |
-| | Real perm. | FN 160 | **TP 1334** |
-
-Imagen: `results/confusion_matrices_three_arms.png` (tres paneles, una matriz por brazo).
-
-**Lectura:** `random_backbone` (0.741) está incluso por debajo del baseline trivial de 0.764: elegir átomos al azar no funciona. `community_importance` (0.804) sí aprende química: gana 0.063 de accuracy y 0.128 de AUC sobre el azar. `paper_smiles_order` da la cifra más alta (0.850), pero esa ventaja es **fuga de procedencia**: el orden en que los SMILES fueron depositados agrupa moléculas por origen, no por química. Al canonizar o destruir la secuencia, esa ventaja desaparece.
+*Figure 3 – Two panels of out‑of‑fold confusion matrices: Pauling electronegativity (top) and the new importance‑based features (bottom), each for SMILES order, random backbone and community importance.*
 
 ---
 
-## 5. Código
-
-```text
-analysis_features/
-  cleaning.py       # pipeline de limpieza por etapas
-  elements.py       # tabla de Hannan + extensiones + auditoría
-  standardize.py    # parseo, sales, SMILES canónico
-  atom_order.py     # score de importancia + comunidades (networkx)
-  embedding.py      # simulador exacto del circuito 10+2
-  three_arms.py     # LOS TRES BRAZOS: build_features → evaluate → plot → run
-  verify.py         # 34 comprobaciones del dataset
-  io.py / cli.py    # lectura/escritura y comandos
-```
-
-`three_arms.py` es el único módulo necesario para reproducir la tabla y la figura final: cuatro funciones pequeñas (`build_features`, `evaluate`, `plot`, `run`) y tres dataclasses. No hay Qiskit: el estado se simula con NumPy.
-
----
-
-## 6. Conclusiones para el equipo
-
-1. El dataset limpio es **1955** moléculas; antes se usaba un fichero que ya había perdido 11 inválidas.
-2. Br, I y P recibían electronegatividad inventada; ya están corregidos.
-3. El propranolol ya no pone Cl en q0 y sus dos entradas con etiquetas opuestas se excluyen.
-4. El circuito usa **electronegatividad de Pauling**, no TPSA. TPSA aparece solo en la ablación de selección atómica.
-5. Elegir q0 al azar no funciona (AUC 0.640). Elegirlo por propiedades RDKit + comunidades funciona mejor (0.768) pero no supera al orden del paper (0.856), que es fuga.
-6. La clasificación la hace una **SVM clásica** sobre 78 momentos; el circuito es un mapa de features, no un clasificador cuántico.
-7. Limitaciones: ciego al estéreo, cola comprimida para el 94.7% de las moléculas, y sin ventaja demostrada sobre descriptores clásicos (SVM Morgan: AUC 0.882).
-
----
-
-## 7. Reproducir
+## 3. Reproducibility
 
 ```bash
-python -m pip install -r requirements.txt
+# Install dependencies
+pip install -r requirements.txt
 
-python -m analysis_features clean          # regenera data/processed/
-python -m analysis_features verify         # 34/34
-python -m analysis_features three-arms     # CSV, JSON y PNG de las 3 matrices
-python -m pytest                           # 55 tests
+# Clean the raw data
+python -m analysis_features clean
+
+# Run all sanity checks
+python -m analysis_features verify
+
+# Produce the three‑arm experiment artefacts
+python -m analysis_features three-arms
+
+# Compare Pauling vs new importance features (2x3 confusion matrices)
+python -m analysis_features embedding-comparison
+
+# Draw the graph‑to‑circuit diagram
+python -m analysis_features diagram
+
+# Sensitivity analysis of descriptor weights
+python -m analysis_features weight-probe
+
+# Run the test suite
+pytest
 ```
+
+All commands are idempotent – running them again produces the same outputs (CSV, JSON, PNG).  The outputs live under `results/` and `data/processed/`.
+
+---
+
+## 4. License and citation
+
+This work is released under the MIT license.  Please cite the original paper if you use the dataset or the code.

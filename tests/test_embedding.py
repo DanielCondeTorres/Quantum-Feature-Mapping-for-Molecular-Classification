@@ -191,3 +191,35 @@ def test_importance_and_community_selectors_are_deterministic() -> None:
         assert first.qubits[0].element == "O"
     assert len(importance_backbone(mol)) == 10
     assert len(community_importance_backbone(mol)) == 10
+
+
+def test_importance_weights_can_be_replaced() -> None:
+    from rdkit import Chem
+
+    from analysis_features.atom_order import importance_scores
+
+    mol = Chem.MolFromSmiles("CC(=O)Nc1ccc(O)cc1")
+    equal = {name: 1.0 / 9 for name in (
+        "tpsa", "logp", "mr", "hbd", "hba", "gasteiger", "formal", "hetero", "aromatic"
+    )}
+    scores = importance_scores(mol, equal)
+    assert len(scores) == sum(a.GetAtomicNum() > 1 for a in mol.GetAtoms())
+    assert all(0.0 <= value <= 1.0 for value in scores.values())
+
+
+def test_new_importance_embedding_supports_all_three_arms() -> None:
+    from analysis_features.embedding_with_importance import embed as embed_new
+
+    smiles = "CC(=O)Nc1ccc(O)cc1"
+    for order, strip in (
+        ("source", False),
+        ("source_permuted", False),
+        ("community_importance", True),
+    ):
+        result = embed_new(
+            smiles, order=order, strip_salts=strip, property="importance"
+        )
+        assert result.features.size == 78
+        assert result.property == "importance"
+        assert np.all(np.isfinite(result.features))
+        assert any(qubit.angle > 0 for qubit in result.qubits)

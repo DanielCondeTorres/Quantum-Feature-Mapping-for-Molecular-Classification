@@ -11,6 +11,9 @@
     python -m analysis_features random-qubit-test
     python -m analysis_features importance-test
     python -m analysis_features three-arms
+    python -m analysis_features embedding-comparison
+    python -m analysis_features diagram
+    python -m analysis_features weight-probe
 """
 
 from __future__ import annotations
@@ -164,6 +167,28 @@ def _three_arms(args: argparse.Namespace) -> None:
     print(table.to_string(index=False))
 
 
+def _embedding_comparison(args: argparse.Namespace) -> None:
+    from .new_analysis_features import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.to_string(index=False))
+
+
+def _diagram(args: argparse.Namespace) -> None:
+    from .diagram import draw
+
+    print(draw(args.outdir))
+
+
+def _weight_probe(args: argparse.Namespace) -> None:
+    from .weight_probe import run
+
+    table = run(outdir=args.outdir)
+    print()
+    print(table.head(3).to_string(index=False))
+
+
 def _verify(args: argparse.Namespace) -> None:
     from .verify import main as verify_main
 
@@ -261,6 +286,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     three_arms.add_argument("--outdir", type=Path, default=Path("results"))
     three_arms.set_defaults(func=_three_arms)
+
+    comparison = subparsers.add_parser(
+        "embedding-comparison",
+        help="Pauling vs new importance features: 2x3 confusion matrices",
+    )
+    comparison.add_argument("--outdir", type=Path, default=Path("results"))
+    comparison.set_defaults(func=_embedding_comparison)
+
+    diagram = subparsers.add_parser("diagram", help="draw the graph-to-circuit figure")
+    diagram.add_argument("--outdir", type=Path, default=Path("results"))
+    diagram.set_defaults(func=_diagram)
+
+    weights = subparsers.add_parser(
+        "weight-probe", help="sensitivity of the fixed importance weights"
+    )
+    weights.add_argument("--outdir", type=Path, default=Path("results"))
+    weights.set_defaults(func=_weight_probe)
 
     verify = subparsers.add_parser("verify", help="check every cleaning requirement")
     verify.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)

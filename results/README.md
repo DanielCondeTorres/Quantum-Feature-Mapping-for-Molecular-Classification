@@ -5,6 +5,8 @@ different score for `canonical`, `chemical` and `source` atom orders, is the
 difference caused by *which ten atoms* reach q0–q9, or by *which qubit* each
 atom occupies?
 
+![Graph-to-circuit diagram of the 10+2 feature map](embedding_diagram.png)
+
 ## Setup
 
 | Item | Value |
@@ -37,6 +39,8 @@ ordering changes. Nothing is tuned on the test fold.
 
 The three seed means are reported with their standard deviation; the individual
 seed values are in `atom_order_benchmark.csv`.
+
+![Out-of-fold confusion matrices for source, canonical and chemical on the full dataset](confusion_matrix.png)
 
 ## The three controls that separate set from order
 
@@ -133,6 +137,8 @@ controls to report are `canonical_shuffled` (same set, random qubits) and
 
 ## Comparison with `main` Branch (250-Molecule Subset vs Full Dataset)
 
+![Quantum vs classical models on the 250-molecule subset and the full cleaned dataset](confusion_matrices_main_vs_cleaned.png)
+
 In the original repository (`main` branch):
 1. **Dataset size and selection**: Only 250 molecules (125 permeable, 125 non-permeable) were sampled randomly (`BBBP_previous_250.csv`), evaluated with a 10-split `StratifiedShuffleSplit`.
 2. **SMILES representation**: Molecules were processed as raw SMILES strings. Unstripped counter-ions (such as `[Cl]` in propranolol) occupied qubit 0 (`q0`), and missing elements in `HANNAN_EN` (Br, I, P) silently defaulted to 1.0.
@@ -188,57 +194,61 @@ same RBF-SVM on 78 Pauli moments:
    heteroatom flag, absolute formal charge, pharmacophore role weight, and a
    fixed 0.4/0.3/0.3 mixture of TPSA/en/role. None is fitted to BBBP labels.
 
-| Arm | Cómo se elige q0–q9 | AUC | Bal. acc. |
+| Arm | How q0–q9 is chosen | AUC | Bal. acc. |
 |---|---|---:|---:|
-| `source` | primer átomo del SMILES depositado, sales incluidas | **0.8805** | 0.796 |
-| `source_random` (3 seeds) | inicio aleatorio en el SMILES depositado | 0.8200 ± 0.017 | 0.732 |
-| `canonical` | primeros 10 átomos del SMILES canónico | **0.8015** | 0.732 |
-| `property_charge` | mayor carga formal absoluta | 0.8000 | 0.725 |
-| `property_role` | mayor peso de rol farmacofórico | 0.7908 | 0.738 |
-| `property_mixed` | mezcla fija TPSA/EN/rol (0.4/0.3/0.3) | 0.7891 | 0.728 |
-| `property_pauling` | mayor electronegatividad de Pauling | 0.7868 | 0.736 |
-| `property_tpsa` | mayor contribución TPSA por átomo (RDKit) | 0.7792 | 0.730 |
-| `property_hetero` | prioridad de heteroátomos | 0.7714 | 0.712 |
-| `chemical` | cobertura de entornos Morgan y roles | 0.7664 | 0.689 |
+| `source` | first atom of the deposited SMILES, salts kept | **0.8805** | 0.796 |
+| `source_random` (3 seeds) | random start in the deposited SMILES | 0.8200 ± 0.017 | 0.732 |
+| `canonical` | first ten atoms of the canonical SMILES | **0.8015** | 0.732 |
+| `property_charge` | highest absolute formal charge | 0.8000 | 0.725 |
+| `property_role` | highest pharmacophore role weight | 0.7908 | 0.738 |
+| `property_mixed` | fixed TPSA/EN/role mixture (0.4/0.3/0.3) | 0.7891 | 0.728 |
+| `property_pauling` | highest Pauling electronegativity | 0.7868 | 0.736 |
+| `property_tpsa` | highest per-atom TPSA contribution (RDKit) | 0.7792 | 0.730 |
+| `property_hetero` | heteroatom priority | 0.7714 | 0.712 |
+| `chemical` | coverage of Morgan environments and roles | 0.7664 | 0.689 |
 
-`source_random` es la media de tres semillas (0.8281, 0.8002, 0.8316); la
-semilla 1, que aparece en las figuras, da 0.8002, idéntica al canónico.
+`source_random` is the mean of three seeds (0.8281, 0.8002, 0.8316); seed 1,
+which appears in the figures, gives 0.8002, identical to canonical.
 
-`pca_property_selectors.png` contiene seis paneles de PCA (2x3) y
-`confusion_matrix_property_selectors.png` las seis matrices de confusión
-correspondientes, para `source`, `source_random` (semilla 1), `canonical`,
-`property_tpsa`, `property_role` y `property_mixed`. El PCA se ajusta sobre los
-78 momentos estandarizados (StandardScaler) y los puntos se colorean por `p_np`.
+![PCA (2x3) of the 78 moments coloured by label for six selectors](pca_property_selectors.png)
 
-### Interpretación
+![Out-of-fold confusion matrices (2x3) for the same six selectors](confusion_matrix_property_selectors.png)
 
-- **Ningún selector por propiedad supera al canónico** (0.8015). El mejor es
-  `property_charge` (0.8000), que en BBBP es casi indistinguible del canónico
-  porque casi todos los átomos tienen carga 0 y el desempate por índice devuelve
-  otra vez los primeros diez. No es una ganancia química.
-- **Priorizar polaridad es peor**: TPSA 0.7792, heteroátomos 0.7714 y cobertura
-  Morgan 0.7664 quedan por debajo. Como ya mostró el diagnóstico de gates, estos
-  selectores eligen átomos polares dispersos, reducen los enlaces
-  backbone–backbone (7.76 frente a 9.14 del canónico) y absorben la señal en
-  gates de interfaz duplicados en q10/q11.
-- **`source_random` sí es numéricamente mejor** (0.820 de media) que todos los
-  selectores químicos, pero no es una prueba de que el inicio aleatorio ayude:
-  al destruir la secuencia (`source_permuted`) cae a 0.7587, y al quitar sales
-  no baja (0.8245). Lo que queda es la secuencia de procedencia del archivo, no
-  la química.
-- **El PCA no muestra separación lineal clara.** PC1+PC2 explica entre 39.2% y
-  50.8% de la varianza según el brazo; las nubes de permeables y no permeables
-  se solapan en todos los paneles. `property_role` y `property_mixed` explican
-  algo más de varianza (50.7%/50.8%) pero no mejor AUC (0.791/0.789). La
-  separación la hace la SVM RBF, no las dos primeras componentes.
-- **El desequilibrio de clases importa.** `property_role` tiene mayor balanced
-  accuracy (0.738) que `canonical` (0.732) pese a menor AUC (0.791 vs 0.802);
-  en todos los paneles la matriz tiene muchos más falsos positivos que
-  falsos negativos porque el 76% de las moléculas son permeables.
+`pca_property_selectors.png` contains six PCA panels (2x3) and
+`confusion_matrix_property_selectors.png` the six corresponding confusion
+matrices, for `source`, `source_random` (seed 1), `canonical`,
+`property_tpsa`, `property_role` and `property_mixed`. The PCA is fitted on the
+78 standardised moments (StandardScaler) and the points are coloured by `p_np`.
 
-**Conclusión para el equipo:** elegir q0 por propiedades químicas de RDKit no
-mejora el mapa 10+2; la ventaja aparente del `source` con inicio aleatorio es
-fuga de procedencia, y el mejor modelo real sigue siendo el clásico de Morgan
+### Interpretation
+
+- **No per-property selector beats canonical** (0.8015). The best is
+  `property_charge` (0.8000), which on BBBP is almost indistinguishable from
+  canonical because almost every atom has charge 0 and the index tie-break
+  returns the first ten atoms again. This is not a chemical gain.
+- **Prioritising polarity is worse**: TPSA 0.7792, heteroatoms 0.7714 and
+  Morgan coverage 0.7664 all fall below. As the gate diagnostic already showed,
+  these selectors choose scattered polar atoms, reduce backbone–backbone bonds
+  (7.76 vs 9.14 for canonical) and absorb the signal into interface gates
+  duplicated on q10/q11.
+- **`source_random` is numerically better** (0.820 mean) than all chemical
+  selectors, but it is not proof that a random start helps: destroying the
+  sequence (`source_permuted`) drops it to 0.7587, and removing salts does not
+  lower it (0.8245). What remains is the file's provenance sequence, not chemistry.
+- **The PCA shows no clear linear separation.** PC1+PC2 explains between 39.2%
+  and 50.8% of the variance depending on the arm; the permeable and
+  non-permeable clouds overlap in every panel. `property_role` and
+  `property_mixed` explain slightly more variance (50.7%/50.8%) but do not
+  improve AUC (0.791/0.789). The separation is done by the RBF SVM, not by the
+  first two components.
+- **Class imbalance matters.** `property_role` has higher balanced accuracy
+  (0.738) than `canonical` (0.732) despite a lower AUC (0.791 vs 0.802); in
+  every panel the matrix has far more false positives than false negatives
+  because 76% of the molecules are permeable.
+
+**Conclusion for the team:** choosing q0 by RDKit chemical properties does not
+improve the 10+2 map; the apparent advantage of `source` with a random start is
+a provenance leak, and the best real model is still the classical Morgan model
 (AUC 0.882).
 
 ## The requested four-feature comparison
@@ -255,6 +265,8 @@ fitted inside each training fold, so no test information leaks.
 | `source_random` | same string, random q0 (seed 0) | 78 | 0.8281 (0.805–0.851) | 0.740 |
 | `tpsa` | canonical order + per-atom TPSA angles | 78 | 0.8073 (0.781–0.830) | 0.720 |
 | `pca2` | canonical circuit → PCA of 78 moments | **2** | 0.5933 (0.565–0.622) | 0.500 |
+
+![Out-of-fold confusion matrices (2x2) for the four feature treatments](confusion_matrices_four_features.png)
 
 The four confusion matrices are in `confusion_matrices_four_features.png`
 (TN/FP/FN/TP in reading order):
@@ -278,8 +290,10 @@ unsupervised components as the feature map for this task.
 `python -m analysis_features pca-diagnosis` separates four effects. The figure
 `pca_diagnosis.png` shows all of them.
 
+![PCA diagnosis: variance, label correlation, class imbalance and score distributions](pca_diagnosis.png)
+
 1. **PCA rotation is not the problem.** Keeping **all 78** PCs gives AUC
-   **0.8015**, exactly the same as the raw 78 standardized moments. PCA is an
+   **0.8015**, exactly the same as the raw 78 standardised moments. PCA is an
    orthogonal rotation and the isotropic RBF kernel is invariant to it. A
    linear combination of features is fine.
 2. **Truncation is the problem.** The signal is distributed across dozens of
@@ -330,31 +344,32 @@ Two protocols are reported: five scaffold-disjoint folds and the paper's
 ten stratified shuffle splits. Plain accuracy has a trivial baseline of
 **0.7642** ("always permeable") on this imbalanced table.
 
-| Protocol | Regla de q0–q9 | Accuracy | Bal. acc. | AUC |
+![Distribution of accuracy over 20 random-backbone seeds versus the paper rule](random_qubit_accuracy.png)
+
+| Protocol | q0–q9 rule | Accuracy | Bal. acc. | AUC |
 |---|---|---:|---:|---:|
-| 5 folds por scaffold | paper: primeros 10 átomos en orden SMILES | **0.8501** | 0.776 | 0.8559 |
-| 5 folds por scaffold | aleatoria, media de 20 seeds | 0.7587 ± 0.0180 | 0.6116 | 0.6886 |
-| 10 splits estratificados | paper | **0.8558 ± 0.0171** | 0.7827 | 0.8727 |
-| 10 splits estratificados | aleatoria, media de 20 seeds | 0.7747 ± 0.0182 | — | — |
+| 5 scaffold folds | paper: first 10 atoms in SMILES order | **0.8501** | 0.776 | 0.8559 |
+| 5 scaffold folds | random, mean of 20 seeds | 0.7587 ± 0.0180 | 0.6116 | 0.6886 |
+| 10 stratified splits | paper | **0.8558 ± 0.0171** | 0.7827 | 0.8727 |
+| 10 stratified splits | random, mean of 20 seeds | 0.7747 ± 0.0182 | — | — |
 
-La accuracy aleatoria va de 0.7361 a 0.8036 en los 20 seeds; el mejor
-(seed 13, accuracy 0.8036, AUC 0.7969) sigue por debajo del paper. Con la
-regla del paper no hay ninguna semilla que la iguale.
+Random accuracy ranges from 0.7361 to 0.8036 across the 20 seeds; the best
+(seed 13, accuracy 0.8036, AUC 0.7969) is still below the paper rule. No seed
+matches the paper rule.
 
-**El resultado incómodo:** la media aleatoria (0.7587) está incluso ligeramente
-**por debajo del baseline trivial** de predecir siempre “permeable” (0.7642).
-Es decir: elegir los 10 qubits al azar produce un clasificador peor que no
-mirar la molécula. La selección del paper, en cambio, da 0.850 de accuracy.
-Esto confirma que el orden de átomos del SMILES contiene una señal muy fuerte
-para esta tarea — pero, como mostramos arriba, es señal de **procedencia del
-archivo**, no de química: al canonizar el mismo conjunto cae y al destruir la
-secuencia (`source_permuted`, 0.7587) se comporta exactamente como una
-selección aleatoria.
+**The uncomfortable result:** the random mean (0.7587) is slightly **below the
+trivial baseline** of always predicting "permeable" (0.7642). In other words,
+choosing the ten qubits at random gives a classifier worse than not looking at
+the molecule at all. The paper's selection, in contrast, gives 0.850 accuracy.
+This confirms that the SMILES atom order carries a very strong signal for this
+task — but, as shown above, it is a signal of **file provenance**, not chemistry:
+canonicalising the same set lowers it and destroying the sequence
+(`source_permuted`, 0.7587) makes it behave exactly like a random selection.
 
-`random_qubit_accuracy.png` muestra el histograma de accuracies de los 20
-seeds frente a la barra del paper y la línea del baseline trivial, la relación
-accuracy/balanced accuracy y una matriz de confusión de ejemplo (seed 0:
-TN 131, FP 330, FN 177, TP 1317).
+`random_qubit_accuracy.png` shows the histogram of the 20 seed accuracies
+against the paper bar and the trivial baseline line, the accuracy/balanced
+accuracy relationship and an example confusion matrix (seed 0: TN 131, FP 330,
+FN 177, TP 1317).
 
 ## BBBP atom importance and graph communities
 
@@ -368,23 +383,155 @@ hetero and aromatic) are fixed a priori, never fitted to labels. The
 `community_importance` arm first splits the heavy-atom graph into communities
 by modularity optimisation and selects the best atom of each community.
 
-| Regla de q0–q9 | Accuracy | Bal. acc. | AUC | Accuracy (10 splits) |
+![Confusion matrices comparing paper, random, importance and community importance](importance_test.png)
+
+| q0–q9 rule | Accuracy | Bal. acc. | AUC | Accuracy (10 splits) |
 |---|---:|---:|---:|---:|
-| Paper: orden SMILES | **0.8501** | 0.776 | 0.8559 | — |
-| Aleatorio (media 20 seeds) | 0.7587 | 0.612 | 0.6886 | — |
+| Paper: SMILES order | **0.8501** | 0.776 | 0.8559 | — |
+| Random (mean 20 seeds) | 0.7587 | 0.612 | 0.6886 | — |
 | `importance` (RDKit) | 0.8061 | 0.704 | 0.7777 | 0.8261 |
 | `community_importance` (networkx) | 0.8036 | 0.704 | 0.7679 | 0.8192 |
 
-Matrices de confusión: `importance` TN 235 / FP 226 / FN 153 / TP 1341;
+Confusion matrices: `importance` TN 235 / FP 226 / FN 153 / TP 1341;
 `community_importance` TN 237 / FP 224 / FN 160 / TP 1334.
 
-**Conclusión:** la selección por importancia química sí funciona — mejora la
-accuracy de 0.759 a 0.806 y el AUC de 0.689 a 0.778 respecto a elegir átomos al
-azar, y supera el baseline trivial de 0.764. Pero sigue por debajo del orden
-SMILES del paper (0.850), que como ya vimos contiene fuga de procedencia. Las
-comunidades no aportan: 0.804 frente a 0.806 del ranking directo, probablemente
-porque obligan a representar regiones que no son las más informativas. La
-figura `importance_test.png` compara los cuatro brazos.
+**Conclusion:** chemical importance selection does work — it raises accuracy
+from 0.759 to 0.806 and AUC from 0.689 to 0.778 compared with choosing atoms at
+random, and beats the trivial baseline of 0.764. But it is still below the
+paper's SMILES order (0.850), which, as seen above, contains a provenance leak.
+Communities do not help: 0.804 versus 0.806 for the direct ranking, probably
+because they force the representation of regions that are not the most
+informative. The figure `importance_test.png` compares the four arms.
+
+## Why those descriptor weights? (full justification)
+
+A reviewer is right to ask where `TPSA 0.20`, `logP 0.20`, `HBD 0.15` etc. come
+from. Short answer: they are **fixed expert priors from the medicinal-chemistry
+literature on passive BBB permeation, not parameters fitted to BBBP labels**.
+They express the *relative salience* of the different chemical features that
+govern membrane crossing. They are chosen before any model is trained and are
+never updated using the test folds.
+
+### Per-descriptor rationale
+
+| Descriptor | Weight | Mechanistic role in passive BBB permeation | Source |
+|---|---:|---|---|
+| TPSA contribution | 0.20 | Polar surface area is the most widely used BBB filter: CNS drugs typically need PSA ≲ 90 Å², and reduced PSA tracks increased permeation better than lipophilicity. TPSA is available as a fast 2-D per-atom decomposition. | [1], [2], [3] |
+| Crippen logP contribution | 0.20 | Lipophilicity is the other dominant term: brain uptake rises with logP up to an optimum (≈ 1.5–2.7) and then falls, because very lipophilic compounds are retained in the membrane. | [1], [3], [4] |
+| H-bond donor role | 0.15 | Donor groups are more troublesome than acceptors in CNS design: desolvation of an N–H/O–H donor crossing the lipid phase is costly. Marketed CNS drugs average ≈ 1.5 donors. | [1], [5] |
+| H-bond acceptor role | 0.10 | Relevant to polarity but less penalising per group; marketed CNS drugs average ≈ 2.1 acceptors. Kept below the donor weight to reflect the donor/acceptor asymmetry. | [1], [5] |
+| Molar refractivity | 0.10 | Molecular size/polarizability contributes independently of logP and PSA in Abraham-type logBB equations; the Wildman–Crippen scheme gives per-atom MR contributions. | [4], [6] |
+| Gasteiger partial charge | 0.10 | Local dipole/charge increases the desolvation penalty at the polar membrane interface; ionisation state is repeatedly found predictive of logBB. | [1], [7] |
+| Formal charge | 0.05 | Strong acids/bases are largely excluded from the CNS, but only 34 molecules here carry a formal charge, so a large weight would let a rare flag dominate the ranking. | [1], [7] |
+| Heteroatom flag | 0.05 | Coarse proxy for hydrogen bonding and polarity; deliberately down-weighted because it is largely redundant with TPSA and HBD/HBA. | [1] |
+| Aromaticity | 0.05 | Separates aromatic nitrogen from amide nitrogen and contributes to membrane affinity; used as a weak tie-breaker, not a primary criterion. | [1] |
+
+The two largest weights (0.20 + 0.20) go to the two descriptors that every
+BBB QSAR review identifies as primary — polarity and lipophilicity. The next
+tier (0.15/0.10/0.10) covers the hydrogen-bond asymmetry, size/polarizability
+and local charge. The last three (0.05 each) are deliberately weak, redundant
+or rare signals. Molecular weight and rotatable-bond count are *molecular*
+properties, not per-atom properties, so they cannot assign a score to an
+individual backbone atom and are outside this particular selector.
+
+### Normalisation: why the numbers are comparable at all
+
+For each molecule and each continuous descriptor (`tpsa`, `logp`, `mr`,
+`gasteiger`):
+
+```
+x_i' = |x_i - mean_j(x_j)| / max_j |x_j - mean_j(x_j)|    in [0, 1]
+```
+
+Binary flags (`hbd`, `hba`, `formal`, `hetero`, `aromatic`) are already in
+{0, 1}. The final score is `s_i = Σ_k w_k · x'_ik` with `Σ w_k = 1`, hence
+`s_i ∈ [0, 1]`. This matters for three reasons:
+
+1. **Units cannot dominate.** TPSA is in Å², logP in log units, MR in cm³/mol;
+   raw values would make the largest-unit descriptor win regardless of chemistry.
+2. **The score is relative to the molecule**, so it finds the atoms that are
+   *chemically distinctive within that molecule* — the atoms carrying the
+   functional groups worth resolving with the ten available qubits.
+3. **The weights are shares of salience, not regression coefficients.** They
+   have no physical unit and are not meant to be transferable to a different
+   scoring rule.
+
+**What the score is not.** It is *not* a predictor of BBB permeability, and a
+high score does not mean "this atom makes the molecule more permeable". It is
+an **atom-selection salience** score: it decides which atoms occupy q0–q9.
+Its sign relative to the label is learned later by the RBF SVM from the 78
+Pauli moments. Using `|x − mean|` means an unusually lipophilic atom in a
+polar molecule is also selected, which is intended: the backbone should span
+the chemically distinctive regions, including amphiphilic contrasts. The
+classifier, not the weight table, decides permeability.
+
+### Sensitivity analysis: the claim is robustness, not optimality
+
+`python -m analysis_features weight-probe` re-runs the whole pipeline on the
+same molecules, folds, circuit and SVM, changing only the weight vector.
+Expert priors, equal weights and 20 Dirichlet-random vectors give:
+
+| Configuration | Accuracy | Balanced acc. | AUC |
+|---|---:|---:|---:|
+| Expert priors (0.20/0.20/0.10/0.15/0.10/0.10/0.05/0.05/0.05) | 0.8036 | 0.7035 | 0.7679 |
+| Equal weights (1/9 each) | 0.7908 | 0.6996 | **0.7697** |
+| Random Dirichlet, mean ± SD (n = 20) | — | — | 0.7538 ± 0.0247 |
+| Random Dirichlet, min–max | — | — | 0.6968 – 0.7927 |
+
+Full per-vector values are in `weight_sensitivity.csv` / `.json`.
+
+**Honest reading.** Equal weights are *slightly better* (Δ AUC = +0.0018), and
+the expert vector lies inside the random distribution (about 0.6 SD above its
+mean). We therefore **do not claim these weights are optimal or that they
+improve AUC**. The defensible claim is narrower:
+
+- the exact numbers are not critical — the AUC spread from equal weights is
+  negligible, and weight choice changes AUC far less (≈ 0.02 SD) than the
+  selection principle itself: chemistry-driven selection 0.768 vs random
+  backbone 0.639, a gap of ≈ 0.129 (about 5 SD);
+- the priors make the selector **interpretable and reproducible**: a chemist
+  can read why an atom was chosen, and the rule is identical for every molecule
+  and every fold;
+- the random-weight vectors are a **negative control**, not a model-selection
+  search: no vector was chosen because it maximised test AUC, so there is no
+  weight-tuning leakage.
+
+### Anticipated objections
+
+- *"Why 0.20 and not 0.19?"* — the numbers encode a qualitative ranking
+  (polarity ≈ lipophilicity > HBD > HBA ≈ MR ≈ charge > weak proxies), not a
+  calibrated optimum. The sensitivity test is precisely the evidence that this
+  precision is unnecessary.
+- *"Don't TPSA, HBD, HBA and heteroatom count duplicate each other?"* — yes,
+  they are correlated; this is why the redundant coarse flag gets 0.05 and why
+  equal weights perform the same. The score is used only to rank atoms, so
+  partial redundancy changes little (see the equal-weight row).
+- *"Isn't rewarding polar atoms contrary to BBB chemistry?"* — the score
+  rewards *chemically distinctive atoms*, not permeable molecules. The SVM
+  learns the relationship to the label afterwards; see the paragraph above.
+- *"Were the weights tuned on the test set?"* — no. They were fixed from the
+  literature before evaluation. The probe is reported post hoc as a robustness
+  check and the best random vector was **not** adopted.
+
+### References
+
+1. Pajouhesh H, Lenz GR. Medicinal chemical properties of successful central
+   nervous system drugs. *NeuroRx* 2005;2(4):541–553. doi:10.1602/neurorx.2.4.541.
+2. Veber DF, Johnson SR, Cheng HY, Smith BR, Ward KW, Kopple KD. Molecular
+   properties that influence the oral bioavailability of drug candidates.
+   *J. Med. Chem.* 2002;45(12):2615–2623.
+3. Hitchcock SA, Pennington LD. Structure–brain exposure relationships.
+   *J. Med. Chem.* 2006;49(26):7559–7583. doi:10.1021/jm060642i.
+4. Abraham MH. The factors that influence permeation across the blood–brain
+   barrier. *Eur. J. Med. Chem.* 2004;39(3):235–240.
+5. Kenny PW. Hydrogen-bond donors in drug design.
+   *J. Med. Chem.* 2022;65(21):14261–14275. doi:10.1021/acs.jmedchem.2c01147.
+6. Wildman SA, Crippen GM. Prediction of physicochemical parameters by atomic
+   contributions. *J. Chem. Inf. Comput. Sci.* 1999;39(5):868–873.
+7. Muehlbacher M, Spitzer GM, Liedl KR, Kornhuber J. Qualitative prediction of
+   blood–brain barrier permeability on a large and refined dataset.
+   *J. Comput.-Aided Mol. Des.* 2011;25(12):1095–1106.
+   doi:10.1007/s10822-011-9478-1.
 
 ## Final clean comparison: only three selection rules
 
@@ -393,43 +540,63 @@ with three confusion matrices** and no other arms. It uses the full cleaned
 1955-row table, the published 10+2 circuit with the alternating tail, five
 scaffold-disjoint folds, and the same RBF SVM on 78 Pauli moments.
 
-| Regla | Cómo elige q0–q9 | Accuracy | Bal. acc. | AUC |
+![Out-of-fold confusion matrices for the three selection rules](confusion_matrices_three_arms.png)
+
+| Rule | How q0–q9 is chosen | Accuracy | Bal. acc. | AUC |
 |---|---|---:|---:|---:|
-| `paper_smiles_order` | Primeros 10 átomos en orden de parseo SMILES de RDKit | 0.8501 | 0.776 | 0.8559 |
-| `random_backbone` | 10 átomos pesados al azar del mismo SMILES | 0.7407 | 0.583 | 0.6399 |
-| `community_importance` | Mejor átomo por comunidad + ranking RDKit | 0.8036 | 0.704 | 0.7679 |
+| `paper_smiles_order` | first 10 atoms in RDKit SMILES parse order | 0.8501 | 0.776 | 0.8559 |
+| `random_backbone` | 10 random heavy atoms from the same SMILES | 0.7407 | 0.583 | 0.6399 |
+| `community_importance` | best atom per community + RDKit ranking | 0.8036 | 0.704 | 0.7679 |
 
-**Qué features usa `community_importance`:** un score fijo por átomo que
-combina la contribución de TPSA (`_CalcTPSAContribs`), logP y refractividad
-molar de Crippen (`_CalcCrippenContribs`), los roles HBD/HBA de RDKit, la carga
-parcial de Gasteiger, la carga formal, la identidad del elemento y la
-aromaticidad. Los descriptores continuos se normalizan por su desviación
-absoluta respecto a la media de la molécula; los pesos son fijos y nunca se
-ajustan a etiquetas. Luego networkx divide el grafo de átomos pesados en
-comunidades por modularidad, coge el átomo de mayor score de cada comunidad y
-rellena los huecos con el ranking global. q0 es el átomo seleccionado con mayor
-score.
+**What features `community_importance` uses:** a fixed per-atom score combining
+the TPSA contribution (`_CalcTPSAContribs`), Crippen logP and molar refractivity
+(`_CalcCrippenContribs`), RDKit HBD/HBA roles, Gasteiger partial charge, formal
+charge, element identity and aromaticity. Continuous descriptors are
+normalised by their absolute deviation from the molecule's mean; the weights
+are fixed and never fitted to labels. NetworkX then splits the heavy-atom
+graph into communities by modularity, takes the highest-scoring atom of each
+community and fills the remaining qubits from the global ranking. q0 is the
+highest-scoring selected atom.
 
-**Qué pasa con los otros átomos (la cola):** todos los átomos pesados que no
-entran en q0–q9 van a los dos qubits auxiliares. Como en el paper, se parten en
-dos listas alternas por índice (A = 0,2,4…, B = 1,3,5…) y sus sumas de
-electronegatividad fijan `θ10` y `θ11`. Los enlaces que cruzan
-backbone–cola emiten dos compuertas `Rxx`, una a q10 y otra a q11; los enlaces
-dentro de la cola no emiten `Rxx`. La selección por comunidades **no elimina**
-esta compresión —no se puede en un diseño fijo de 12 qubits—, pero hace que
-los 10 átomos elegidos representen regiones distintas de la molécula, de modo
-que los dos qubits cola resumen un resto más repartido. Esa es la diferencia
-frente al ranking puro: evita que todos los qubits importantes caigan en el
-mismo grupo funcional y dejen el resto de una molécula grande como cola.
+**What happens to the other atoms (the tail):** every heavy atom not selected
+for q0–q9 goes into the two summary qubits. As in the paper, they are split into
+two alternating lists by index (A = 0,2,4,…, B = 1,3,5,…) and their
+electronegativity sums set `θ10` and `θ11`. Bonds crossing backbone–tail emit
+two `Rxx` gates, one to q10 and one to q11; tail–tail bonds emit no `Rxx` gate.
+Community selection **does not remove** this compression — it cannot in a
+fixed 12-qubit design — but it makes the ten selected atoms represent different
+regions of the molecule, so the two tail qubits summarise a more evenly sampled
+remainder. This is the difference from pure ranking: it avoids placing all the
+important qubits in the same functional group and leaving the rest of a large
+molecule as tail.
 
-**Los otros dos brazos:** `paper_smiles_order` reproduce la regla literal del
-paper (sin selección química; en esta tabla limpia arrastra la fuga de
-procedencia del string depositado) y `random_backbone` es el control de
-“cualquier conjunto de 10 átomos”, que queda incluso por debajo del baseline
-trivial de predecir siempre permeable (0.764).
+**The other two arms:** `paper_smiles_order` reproduces the paper's literal
+rule (no chemical selection; on this clean table it carries the provenance leak
+of the deposited string), and `random_backbone` is the control for "any ten
+atoms", which falls even below the trivial baseline of always predicting
+"permeable" (0.764).
 
-`confusion_matrices_three_arms.png` muestra las tres matrices; `three_arms.csv`
-y `three_arms.json` tienen métricas y configuración.
+`confusion_matrices_three_arms.png` shows the three matrices; `three_arms.csv`
+and `three_arms.json` hold the metrics and configuration.
+
+## Pauling electronegativity vs. the new importance features
+
+![Pauling electronegativity (top) vs new importance features (bottom), three arms each](embedding_comparison.png)
+
+`python -m analysis_features embedding-comparison` runs two parameterisations
+of the same 12-qubit circuit. The only difference is the ten backbone `Ry`
+angles: `θi = 0.1·χᵢ²` with Pauling electronegativity, versus `θi = 0.1·sᵢ²`
+with the new per-atom importance scores. The alternating-electronegativity
+tail, the three selection rules, the folds and the SVM are identical in both
+panels.
+
+| Embedding | SMILES order | Random backbone | Community importance |
+|---|---:|---:|---:|
+| Pauling `χ²` | AUC 0.860 | AUC 0.634 | AUC 0.784 |
+| New features `s²` | AUC 0.867 | AUC 0.676 | AUC 0.745 |
+
+Counts, metrics and configuration are in `embedding_comparison.csv` and
+`embedding_comparison.json`.
 
 ## Files
 
@@ -454,6 +621,9 @@ y `three_arms.json` tienen métricas y configuración.
 | `random_qubit_test.csv`, `.json`, `.png` | Paper SMILES order vs 20 random backbones, accuracy distributions |
 | `importance_test.csv`, `.json`, `.png` | RDKit BBBP importance and graph communities vs paper order |
 | `three_arms.csv`, `.json`, `confusion_matrices_three_arms.png` | Final focused comparison: paper, random and community importance |
+| `embedding_diagram.png` | Figure of the molecular graph and the 10+2 wiring used in the README |
+| `weight_sensitivity.csv`, `.json` | Expert priors vs equal and 20 random weight vectors |
+| `embedding_comparison.csv`, `.json`, `embedding_comparison.png` | Pauling electronegativity vs new importance features, 2x3 confusion matrices |
 
 Reproduce with:
 
@@ -466,4 +636,5 @@ python -m analysis_features pca-diagnosis
 python -m analysis_features random-qubit-test
 python -m analysis_features importance-test
 python -m analysis_features three-arms
+python -m analysis_features embedding-comparison
 ```

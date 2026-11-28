@@ -412,6 +412,21 @@ def property_backbone(
 
 
 # --- BBBP-relevant importance + graph communities --------------------------
+# Fixed expert priors, NOT fitted to BBBP labels. Rationale (with references):
+#   tpsa 0.20 / logp 0.20 : polar surface area and lipophilicity are the two
+#       dominant descriptors of passive BBB permeation (Pajouhesh & Lenz 2005;
+#       Hitchcock & Pennington 2006; Veber et al. 2002).
+#   hbd 0.15 / hba 0.10 : donors impose a larger desolvation penalty than
+#       acceptors (Kenny 2022; Pajouhesh & Lenz 2005).
+#   mr 0.10 : molar refractivity captures size/polarizability, an independent
+#       term in Abraham-type BBB equations (Wildman & Crippen 1999).
+#   gasteiger 0.10 / formal 0.05 : ionisation and local charge restrict
+#       passage of the neutral species through the lipid core.
+#   hetero 0.05 / aromatic 0.05 : weaker, partly redundant proxies.
+# All continuous descriptors are rescaled to [0, 1] per molecule before the
+# weighted sum, so these numbers are relative shares, not physical units.
+# `python -m analysis_features weight-probe` shows the result is insensitive
+# to their exact values (equal weights: 0.7697 vs 0.7679 AUC).
 _IMPORTANCE_WEIGHTS = {
     "tpsa": 0.20,
     "logp": 0.20,
@@ -472,17 +487,20 @@ def per_atom_bbbp_properties(mol: Chem.Mol) -> dict[int, dict[str, float]]:
     return properties
 
 
-def importance_scores(mol: Chem.Mol) -> dict[int, float]:
+def importance_scores(
+    mol: Chem.Mol, weights: dict[str, float] | None = None
+) -> dict[int, float]:
     """Combined, per-molecule-normalised BBBP atom importance.
 
-    Continuous descriptors use their absolute deviation from the molecular
-    mean, so chemically unusual atoms (very polar or very lipophilic) score
-    highest. The weights are fixed a priori and sum to one.
+    Continuous descriptors use absolute deviation from the molecular mean so
+    chemically unusual atoms score highest. ``weights`` defaults to the fixed
+    priors in ``_IMPORTANCE_WEIGHTS``; it can be replaced to test sensitivity.
     """
     properties = per_atom_bbbp_properties(mol)
     heavy = list(properties)
     scores = {idx: 0.0 for idx in heavy}
-    for name, weight in _IMPORTANCE_WEIGHTS.items():
+    active_weights = _IMPORTANCE_WEIGHTS if weights is None else weights
+    for name, weight in active_weights.items():
         values = np.asarray([properties[idx][name] for idx in heavy], dtype=float)
         if name in {"tpsa", "logp", "mr", "gasteiger"} and values.size > 1:
             values = np.abs(values - values.mean())
@@ -495,16 +513,20 @@ def importance_scores(mol: Chem.Mol) -> dict[int, float]:
 
 
 def importance_backbone(
-    mol: Chem.Mol, n_backbone: int = N_BACKBONE
+    mol: Chem.Mol,
+    n_backbone: int = N_BACKBONE,
+    weights: dict[str, float] | None = None,
 ) -> tuple[int, ...]:
     """Ten highest-importance heavy atoms, q0 = most important."""
-    scores = importance_scores(mol)
+    scores = importance_scores(mol, weights)
     ordered = sorted(scores, key=lambda idx: (-scores[idx], idx))
     return tuple(ordered[:n_backbone])
 
 
 def community_importance_backbone(
-    mol: Chem.Mol, n_backbone: int = N_BACKBONE
+    mol: Chem.Mol,
+    n_backbone: int = N_BACKBONE,
+    weights: dict[str, float] | None = None,
 ) -> tuple[int, ...]:
     """Best atom of each graph community, then remaining high scorers.
 
@@ -515,7 +537,7 @@ def community_importance_backbone(
     heavy = heavy_indices(mol)
     if not heavy:
         return ()
-    scores = importance_scores(mol)
+    scores = importance_scores(mol, weights)
     graph = nx.Graph()
     graph.add_nodes_from(heavy)
     for bond in mol.GetBonds():
